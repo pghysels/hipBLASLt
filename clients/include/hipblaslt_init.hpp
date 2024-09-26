@@ -246,7 +246,8 @@ template <typename T>
 inline void hipblaslt_init_device_sin(
     T* A, size_t M, size_t N, size_t lda, size_t stride = 0, size_t batch_count = 1)
 {
-    thrust::for_each_n(thrust::device, thrust::counting_iterator(0), M*N*batch_count,
+    thrust::for_each_n(thrust::device, thrust::counting_iterator(0),
+        std::max(lda*N, stride*batch_count),
         [A](size_t idx) { A[idx] = T(sin(double(idx))); } );
 }
 
@@ -254,7 +255,8 @@ template <typename T>
 inline void hipblaslt_init_device_cos(
     T* A, size_t M, size_t N, size_t lda, size_t stride = 0, size_t batch_count = 1)
 {
-    thrust::for_each_n(thrust::device, thrust::counting_iterator(0), M*N*batch_count,
+    thrust::for_each_n(thrust::device, thrust::counting_iterator(0),
+        std::max(lda*N, stride*batch_count),
         [A](size_t idx) { A[idx] = T(cos(double(idx))); } );
 }
 
