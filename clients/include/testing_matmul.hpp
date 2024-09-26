@@ -1386,10 +1386,17 @@ void testing_matmul_with_bias(const Arguments& arg,
             }
             else if(arg.initialization == hipblaslt_initialization::trig_float)
             {
-                hipblaslt_init_sin(
-                    hA[i].buf(), A_row[i], A_col[i], lda[i], TiA, stride_a[i], num_batches[i]);
-                hipblaslt_init_cos(
-                    hB[i].buf(), B_row[i], B_col[i], ldb[i], TiB, stride_b[i], num_batches[i]);
+                if(arg.unit_check || arg.norm_check || arg.allclose_check)
+                {
+                    hipblaslt_init_sin(
+                        hA[i].buf(), A_row[i], A_col[i], lda[i], TiA, stride_a[i], num_batches[i]);
+                    hipblaslt_init_cos(
+                        hB[i].buf(), B_row[i], B_col[i], ldb[i], TiB, stride_b[i], num_batches[i]);
+                }
+                hipblaslt_init_device_sin(
+                    dA[i].buf(), A_row[i], A_col[i], lda[i], TiA, stride_a[i], num_batches[i]);
+                hipblaslt_init_device_cos(
+                    dB[i].buf(), B_row[i], B_col[i], ldb[i], TiB, stride_b[i], num_batches[i]);
             }
             else if(arg.initialization == hipblaslt_initialization::hpl)
             {
@@ -1423,8 +1430,13 @@ void testing_matmul_with_bias(const Arguments& arg,
             if(arg.initialization == hipblaslt_initialization::rand_int)
                 hipblaslt_init(hC[i].buf(), M[i], N[i], ldc[i], To, stride_c[i], num_batches[i]);
             else if(arg.initialization == hipblaslt_initialization::trig_float)
-                hipblaslt_init_sin(
-                    hC[i].buf(), M[i], N[i], ldc[i], To, stride_c[i], num_batches[i]);
+            {
+                if(arg.unit_check || arg.norm_check || arg.allclose_check)
+                    hipblaslt_init_sin(
+                        hC[i].buf(), M[i], N[i], ldc[i], To, stride_c[i], num_batches[i]);
+                hipblaslt_init_device_sin(
+                    dC[i].buf(), M[i], N[i], ldc[i], To, stride_c[i], num_batches[i]);
+            }
             else if(arg.initialization == hipblaslt_initialization::hpl)
                 hipblaslt_init_hpl(
                     hC[i].buf(), M[i], N[i], ldc[i], To, stride_c[i], num_batches[i]);
@@ -1485,9 +1497,14 @@ void testing_matmul_with_bias(const Arguments& arg,
             hipblaslt_init(hScaleAlphaVec[i].buf(), M[i], 1, M[i], Talpha);
 
         // copy data from CPU to device
-        CHECK_HIP_ERROR(synchronize(dA[i], hA[i], block_count));
-        CHECK_HIP_ERROR(synchronize(dB[i], hB[i], block_count));
-        CHECK_HIP_ERROR(synchronize(dC[i], hC[i], block_count));
+        if(alpha_isnan_type(arg, Talpha) || beta_isnan_type(arg, Talpha)
+           || arg.initialization != hipblaslt_initialization::trig_float)
+        {
+            CHECK_HIP_ERROR(synchronize(dA[i], hA[i], block_count));
+            CHECK_HIP_ERROR(synchronize(dB[i], hB[i], block_count));
+            CHECK_HIP_ERROR(synchronize(dC[i], hC[i], block_count));
+        }
+
         if(arg.gradient && arg.use_e)
         {
             CHECK_HIP_ERROR(synchronize(dE[i], hE[i], block_count));
