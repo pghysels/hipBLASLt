@@ -36,13 +36,13 @@ public:
     HipDeviceBuffer(hipDataType dtype, std::size_t numElements, bool HMM = false)
         : d_vector_type(dtype, numElements, HMM)
         , numBytes(realDataTypeSize(dtype) * numElements)
-        , buffer{this->device_vector_setup(), &hipFree}
+        , buffer(this->device_vector_setup())
     {
     }
 
     ~HipDeviceBuffer()
     {
-        this->device_vector_teardown(static_cast<char*>(buffer.get()));
+        this->device_vector_teardown(static_cast<char*>(buffer));
         buffer = nullptr;
     }
 
@@ -53,12 +53,12 @@ public:
 
     void* buf()
     {
-        return buffer.get();
+        return buffer;
     }
 
     const void* buf() const
     {
-        return buffer.get();
+        return buffer;
     }
 
     std::size_t getNumBytes() const
@@ -79,21 +79,24 @@ public:
     }
 
 private:
-    std::size_t                               numBytes;
-    std::unique_ptr<void, decltype(&hipFree)> buffer;
+    std::size_t numBytes;
+    void* buffer;
 };
 
 class HipHostBuffer
 {
 public:
     HipHostBuffer(hipDataType dtype, std::size_t numElements)
-        : numBytes(realDataTypeSize(dtype) * numElements ? realDataTypeSize(dtype) * numElements
-                                                         : realDataTypeSize(dtype))
-        , buffer(createBuffer(numBytes))
+        : buffer(memory_pool<h_memory>::Get(
+            realDataTypeSize(dtype) * numElements ? realDataTypeSize(dtype) * numElements
+                             : realDataTypeSize(dtype)))
     {
     }
 
-    ~HipHostBuffer()                               = default;
+    ~HipHostBuffer()
+    {
+        memory_pool<h_memory>::Restore(buffer);
+    }
     HipHostBuffer(const HipHostBuffer&)            = delete;
     HipHostBuffer(HipHostBuffer&&)                 = default;
     HipHostBuffer& operator=(const HipHostBuffer&) = delete;
@@ -121,7 +124,7 @@ public:
 
     std::size_t getNumBytes() const
     {
-        return numBytes;
+        return buffer.bytes();
     }
 
     template <typename T>
@@ -137,18 +140,7 @@ public:
     }
 
 private:
-    std::size_t                                      numBytes;
-    std::unique_ptr<void, decltype(&hipFree)>        buffer;
-    static std::unique_ptr<void, decltype(&hipFree)> createBuffer(std::size_t numBytes)
-    {
-        void* rawBuf{};
-        (void)hipHostMalloc(&rawBuf, numBytes);
-        if(!rawBuf)
-        {
-            hipblaslt_cerr << "Error to allocate memory in HipHostBuffer" << std::endl;
-        }
-        return std::unique_ptr<void, decltype(&hipFree)>(rawBuf, &hipFree);
-    }
+    h_memory buffer;
 };
 
 inline hipError_t
