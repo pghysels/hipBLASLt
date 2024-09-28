@@ -111,6 +111,7 @@ if( BUILD_CLIENTS_BENCHMARKS OR BUILD_CLIENTS_TESTS)
       ../common/hipblaslt_parse_data.cpp
       ../common/hipblaslt_arguments.cpp
       ../common/hipblaslt_random.cpp
+      ../common/hipblaslt_init_device.cpp
       ${BLIS_CPP}
     )
 

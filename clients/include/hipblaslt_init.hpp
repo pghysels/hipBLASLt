@@ -29,16 +29,29 @@
 #include "hipblaslt_math.hpp"
 #include "hipblaslt_ostream.hpp"
 #include "hipblaslt_random.hpp"
+#include "hipblaslt_datatype2string.hpp"
 #include <cinttypes>
 #include <hipblaslt/hipblaslt.h>
 #include <iostream>
 #include <omp.h>
 #include <vector>
 
-#include <thrust/for_each.h>
-#include <thrust/iterator/counting_iterator.h>
-#include <thrust/iterator/zip_iterator.h>
-#include <thrust/execution_policy.h>
+enum class ABC {
+    A,
+    B,
+    C
+};
+
+void hipblaslt_init_device(ABC         abc,
+                           hipblaslt_initialization init,
+                           bool        is_nan,
+                           void*       A,
+                           size_t      M,
+                           size_t      N,
+                           size_t      lda,
+                           hipDataType type,
+                           size_t      stride,
+                           size_t      batch_count);
 
 /* ============================================================================================ */
 /*! \brief  matrix/vector initialization: */
@@ -242,83 +255,8 @@ inline void hipblaslt_init_sin(void*       A,
     }
 }
 
-template <typename T>
-inline void hipblaslt_init_device_sin(
-    T* A, size_t M, size_t N, size_t lda, size_t stride = 0, size_t batch_count = 1)
-{
-    thrust::for_each_n(thrust::device, thrust::counting_iterator(0),
-        std::max(lda*N, stride*batch_count),
-        [A](size_t idx) { A[idx] = T(sin(double(idx))); } );
-}
-
-template <typename T>
-inline void hipblaslt_init_device_cos(
-    T* A, size_t M, size_t N, size_t lda, size_t stride = 0, size_t batch_count = 1)
-{
-    thrust::for_each_n(thrust::device, thrust::counting_iterator(0),
-        std::max(lda*N, stride*batch_count),
-        [A](size_t idx) { A[idx] = T(cos(double(idx))); } );
-}
-
-
-inline void hipblaslt_init_device_sin(void*       A,
-                                      size_t      M,
-                                      size_t      N,
-                                      size_t      lda,
-                                      hipDataType type,
-                                      size_t      stride      = 0,
-                                      size_t      batch_count = 1)
-{
-    switch(type)
-    {
-    case HIP_R_32F:
-        hipblaslt_init_device_sin<float>(static_cast<float*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_64F:
-        hipblaslt_init_device_sin<double>(static_cast<double*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_16F:
-        hipblaslt_init_device_sin<hipblasLtHalf>(
-            static_cast<hipblasLtHalf*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_16BF:
-        hipblaslt_init_device_sin<hip_bfloat16>(
-            static_cast<hip_bfloat16*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_8F_E4M3_FNUZ:
-        hipblaslt_init_device_sin<hipblaslt_f8_fnuz>(
-            static_cast<hipblaslt_f8_fnuz*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_8F_E5M2_FNUZ:
-        hipblaslt_init_device_sin<hipblaslt_bf8_fnuz>(
-            static_cast<hipblaslt_bf8_fnuz*>(A), M, N, lda, stride, batch_count);
-        break;
-#ifdef ROCM_USE_FLOAT8
-    case HIP_R_8F_E4M3:
-        hipblaslt_init_device_sin<hipblaslt_f8>(
-            static_cast<hipblaslt_f8*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_8F_E5M2:
-        hipblaslt_init_device_sin<hipblaslt_bf8>(
-            static_cast<hipblaslt_bf8*>(A), M, N, lda, stride, batch_count);
-        break;
-#endif
-    case HIP_R_32I:
-        hipblaslt_init_device_sin<int32_t>(static_cast<int32_t*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_8I:
-        hipblaslt_init_device_sin<hipblasLtInt8>(
-            static_cast<hipblasLtInt8*>(A), M, N, lda, stride, batch_count);
-        break;
-    default:
-        hipblaslt_cerr << "Error type in hipblaslt_init_device_sin" << std::endl;
-        break;
-    }
-}
-
-
 // Initialize matrix so adjacent entries have alternating sign.
-// In gemm if either A or B are initialized with alernating
+// In gemm if either A or B are initialized with alternating
 // sign the reduction sum will be summing positive
 // and negative numbers, so it should not get too large.
 // This helps reduce floating point inaccuracies for 16bit
@@ -543,63 +481,6 @@ inline void hipblaslt_init_cos(void*       A,
         break;
     }
 }
-
-
-inline void hipblaslt_init_device_cos(void*       A,
-                                      size_t      M,
-                                      size_t      N,
-                                      size_t      lda,
-                                      hipDataType type,
-                                      size_t      stride      = 0,
-                                      size_t      batch_count = 1)
-{
-    switch(type)
-    {
-    case HIP_R_32F:
-        hipblaslt_init_device_cos<float>(static_cast<float*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_64F:
-        hipblaslt_init_device_cos<double>(static_cast<double*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_16F:
-        hipblaslt_init_device_cos<hipblasLtHalf>(
-            static_cast<hipblasLtHalf*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_16BF:
-        hipblaslt_init_device_cos<hip_bfloat16>(
-            static_cast<hip_bfloat16*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_8F_E4M3_FNUZ:
-        hipblaslt_init_device_cos<hipblaslt_f8_fnuz>(
-            static_cast<hipblaslt_f8_fnuz*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_8F_E5M2_FNUZ:
-        hipblaslt_init_device_cos<hipblaslt_bf8_fnuz>(
-            static_cast<hipblaslt_bf8_fnuz*>(A), M, N, lda, stride, batch_count);
-        break;
-#ifdef ROCM_USE_FLOAT8
-    case HIP_R_8F_E4M3:
-        hipblaslt_init_device_cos<hipblaslt_f8>(
-            static_cast<hipblaslt_f8*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_8F_E5M2:
-        hipblaslt_init_device_cos<hipblaslt_bf8>(
-            static_cast<hipblaslt_bf8*>(A), M, N, lda, stride, batch_count);
-        break;
-#endif
-    case HIP_R_32I:
-        hipblaslt_init_device_cos<int32_t>(static_cast<int32_t*>(A), M, N, lda, stride, batch_count);
-        break;
-    case HIP_R_8I:
-        hipblaslt_init_device_cos<hipblasLtInt8>(
-            static_cast<hipblasLtInt8*>(A), M, N, lda, stride, batch_count);
-        break;
-    default:
-        hipblaslt_cerr << "Error type in hipblaslt_init_cos" << std::endl;
-        break;
-    }
-}
-
 
 // Initialize vector with HPL-like random values
 template <typename T>
