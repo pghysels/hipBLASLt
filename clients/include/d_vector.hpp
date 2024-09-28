@@ -141,9 +141,9 @@ private:
                 pool.erase(it-1);
             auto e = M(m_bytes * 1.2, use_HMM);
             if(e.get()) return e;
-            // release all memory in the pool and try again
+            hipblaslt_cerr << "Clearing memory pool" << std::endl;
             pool.clear();
-            return M(m_bytes * 1.2, use_HMM);
+            return M(m_bytes, use_HMM);
         }
     }
 
