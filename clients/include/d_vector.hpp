@@ -39,7 +39,7 @@
 #define MAX_DTYPE_SIZE sizeof(double)
 
 /* ============================================================================================ */
-/*! \brief  wrapper around a pointer to hip device or pinned host memory, including allocation size in bytes */
+/*! \brief  (abstract class) wrapper around a pointer to hip device or pinned host memory, including allocation size in bytes */
 class hip_memory
 {
 public:
@@ -52,6 +52,8 @@ public:
     }
 
     bool is_managed() const { return m_managed; }
+
+    bool operator<(size_t s) const { return capacity() < s; }
 
 protected:
     hip_memory(size_t size, size_t capacity, bool use_HMM = false)
@@ -147,8 +149,7 @@ private:
     M get(size_t bytes, bool use_HMM = false)
     {
         auto& pool = use_HMM ? m_pool_managed : m_pool;
-        auto it = std::lower_bound(pool.begin(), pool.end(), bytes,
-            [](const M& e, size_t s) { return e.capacity() < s;  });
+        auto it = std::lower_bound(pool.begin(), pool.end(), bytes);
         if(it != pool.end() &&       // found a buffer that is large enough ..
            it->capacity() < 4 * bytes)  // but not way too large
         {
@@ -175,10 +176,7 @@ private:
     void restore(M& dm)
     {
         auto& pool = dm.is_managed() ? m_pool_managed : m_pool;
-        // insert memory in (sorted) pool
-        auto it = std::lower_bound(pool.begin(), pool.end(), dm.capacity(),
-            [](const M& e, size_t s) { return e.capacity() < s; });
-        pool.insert(it, std::move(dm));
+        pool.insert(std::lower_bound(pool.begin(), pool.end(), dm.capacity()), std::move(dm));
     }
 };
 
