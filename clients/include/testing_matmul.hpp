@@ -1718,22 +1718,24 @@ void testing_matmul_with_bias(const Arguments& arg,
 
     for(int32_t b = 0; b < block_count; b++)
     {
-        gemmVec.push_back(hipblaslt_ext::Gemm(handle,
-                                              transA,
-                                              transB,
-                                              arg.a_type,
-                                              arg.b_type,
-                                              arg.c_type,
-                                              arg.d_type,
-                                              arg.compute_type));
-        groupedGemmVec.push_back(hipblaslt_ext::GroupedGemm(handle,
-                                                            transA,
-                                                            transB,
-                                                            arg.a_type,
-                                                            arg.b_type,
-                                                            arg.c_type,
-                                                            arg.d_type,
-                                                            arg.compute_type));
+        if(!do_grouped_gemm)
+            gemmVec.push_back(hipblaslt_ext::Gemm(handle,
+                                                  transA,
+                                                  transB,
+                                                  arg.a_type,
+                                                  arg.b_type,
+                                                  arg.c_type,
+                                                  arg.d_type,
+                                                  arg.compute_type));
+        else
+            groupedGemmVec.push_back(hipblaslt_ext::GroupedGemm(handle,
+                                                                transA,
+                                                                transB,
+                                                                arg.a_type,
+                                                                arg.b_type,
+                                                                arg.c_type,
+                                                                arg.d_type,
+                                                                arg.compute_type));
     }
 
     std::vector<hipblaslt_ext::GemmEpilogueV2> extepilogue;
