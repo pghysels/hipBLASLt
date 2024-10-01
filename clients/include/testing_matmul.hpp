@@ -1376,6 +1376,8 @@ void testing_matmul_with_bias(const Arguments& arg,
         hipblaslt_init_device
             (ABC::C, arg.initialization, beta_isnan_type(arg, Talpha),
              dC[i].buf(), M[i], N[i], ldc[i], To, stride_c[i], num_batches[i]);
+
+        // copy data from device to CPU
         if(arg.unit_check || arg.norm_check || arg.allclose_check)
         {
             CHECK_HIP_ERROR(synchronize(hA[i], dA[i]));

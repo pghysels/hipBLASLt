@@ -34,70 +34,94 @@
 #include <cinttypes>
 #include <hipblaslt/hipblaslt.h>
 
+
 #define MEM_MAX_GUARD_PAD 8192
 #define MAX_DTYPE_SIZE sizeof(double)
 
-class d_memory
+/* ============================================================================================ */
+/*! \brief  wrapper around a pointer to hip device or pinned host memory, including allocation size in bytes */
+class hip_memory
 {
 public:
-    d_memory() {}
+    size_t bytes() const { return m_size;  }
+    size_t capacity() const { return m_capacity; }
 
-    d_memory(size_t s, bool use_HMM = false) : m_bytes(s), m_managed(use_HMM)
-    {
-        char* d = nullptr;
-        if((use_HMM ? hipMallocManaged(&d, m_bytes) : hipMalloc(&d, m_bytes)) != hipSuccess)
-        {
-            hipblaslt_cerr << "Error allocating " << m_bytes << " m_bytes (" << (m_bytes >> 30)
-                           << " GB) device memory" << std::endl;
-            d = nullptr;
-            m_bytes = 0;
-        }
-        m_d.reset(d);
+    void resize(size_t s) {
+        assert(s <= m_capacity);
+        m_size = s;
     }
-
-    size_t bytes() const { return m_bytes;  }
 
     bool is_managed() const { return m_managed; }
 
-    char* get() { return m_d.get();  }
-    const char* get() const { return m_d.get(); }
+protected:
+    hip_memory(size_t size, size_t capacity, bool use_HMM = false)
+        : m_size(size), m_capacity(capacity), m_managed(use_HMM) {}
+    virtual ~hip_memory() = default;
 
-private:
-    size_t m_bytes   = 0;
-    bool   m_managed = false;
-    std::unique_ptr<char,decltype(&hipFree)> m_d{nullptr, &hipFree};
+    size_t m_size     = 0;
+    size_t m_capacity = 0;
+    bool   m_managed  = false;
 };
 
-class h_memory
+/* ============================================================================================ */
+/*! \brief  wrapper around a pointer to device memory, including allocation size in bytes */
+class d_memory : public hip_memory
 {
 public:
-    h_memory() {}
+    d_memory() : hip_memory(0, 0, false) {}
 
-    h_memory(size_t s, bool use_HMM = false) : m_bytes(s)
+    d_memory(size_t size, size_t capacity, bool use_HMM = false)
+        : hip_memory(size, capacity, use_HMM)
     {
         char* d = nullptr;
-        if(hipHostMalloc(&d, m_bytes) != hipSuccess)
+        if((use_HMM ? hipMallocManaged(&d, capacity) : hipMalloc(&d, capacity)) != hipSuccess)
         {
-            hipblaslt_cerr << "Error allocating " << m_bytes << " m_bytes (" << (m_bytes >> 30)
-                           << " GB) host memory" << std::endl;
+            hipblaslt_cerr << "Error allocating (" << (m_size >> 30) << " GB) device memory" << std::endl;
             d = nullptr;
-            m_bytes = 0;
+            m_size = m_capacity = 0;
         }
         m_d.reset(d);
     }
 
-    size_t bytes() const { return m_bytes;  }
+    char* get() { return m_d.get();  }
+    const char* get() const { return m_d.get(); }
 
-    bool is_managed() const { return false; }
+private:
+    std::unique_ptr<char,decltype(&hipFree)> m_d{nullptr, &hipFree};
+};
+
+/* ============================================================================================ */
+/*! \brief  wrapper around a pointer to pinned host memory (hipHostMalloc), including allocation size in bytes */
+class h_memory : public hip_memory
+{
+public:
+    h_memory() : hip_memory(0, 0, false) {}
+
+    h_memory(size_t size, size_t capacity, bool use_HMM = false)
+        : hip_memory(size, capacity, false)
+    {
+        char* d = nullptr;
+        if(hipHostMalloc(&d, capacity) != hipSuccess)
+        {
+            hipblaslt_cerr << "Error allocating (" << (m_size >> 30) << " GB) host memory" << std::endl;
+            d = nullptr;
+            m_size = m_capacity = 0;
+        }
+        m_d.reset(d);
+        // m_d = std::make_unique<char[]>(capacity);
+    }
 
     char* get() { return m_d.get();  }
     const char* get() const { return m_d.get(); }
 
 private:
-    size_t m_bytes   = 0;
     std::unique_ptr<char,decltype(&hipHostFree)> m_d{nullptr, &hipHostFree};
+    // std::unique_ptr<char[]> m_d;
 };
 
+
+/* ============================================================================================ */
+/*! \brief  memory pool class to keep track of memory in either M = d_memory, or M = h_memory objects */
 template<typename M>
 class memory_pool {
 public:
@@ -113,7 +137,6 @@ public:
 
 private:
     std::vector<M> m_pool, m_pool_managed;
-    size_t m_outstanding = 0, m_max_outstanding = 0;
 
     static memory_pool& Instance()
     {
@@ -121,41 +144,41 @@ private:
         return buffer;
     }
 
-    M get(size_t m_bytes, bool use_HMM = false)
+    M get(size_t bytes, bool use_HMM = false)
     {
-        m_outstanding++;
-        m_max_outstanding = std::max(m_max_outstanding, m_outstanding);
         auto& pool = use_HMM ? m_pool_managed : m_pool;
-        auto it = std::lower_bound(pool.begin(), pool.end(), m_bytes,
-            [](const M& e, size_t s) { return e.bytes() < s;  });
-        if(it != pool.end() &&         // found a buffer that is large enough ..
-           it->bytes() < 4 * m_bytes)  // but not way too large
+        auto it = std::lower_bound(pool.begin(), pool.end(), bytes,
+            [](const M& e, size_t s) { return e.capacity() < s;  });
+        if(it != pool.end() &&       // found a buffer that is large enough ..
+           it->capacity() < 4 * bytes)  // but not way too large
         {
             auto p = std::move(*it);
+            p.resize(bytes);
             pool.erase(it);
             return p;
         }
         else
         {
+            // remove the (largest) buffer that was too small
             if(it != pool.begin())
                 pool.erase(it-1);
-            auto e = M(m_bytes * 1.2, use_HMM);
+            // Allocate 20% extra for later reuse
+            auto e = M(bytes, bytes * 1.2, use_HMM);
             if(e.get()) return e;
             hipblaslt_cerr << "Clearing memory pool" << std::endl;
+            // allocation failed, so clear the pool and try again (without the 20%)
             pool.clear();
-            return M(m_bytes, use_HMM);
+            return M(bytes, bytes, use_HMM);
         }
     }
 
     void restore(M& dm)
     {
-        m_outstanding--;
         auto& pool = dm.is_managed() ? m_pool_managed : m_pool;
-        auto it = std::lower_bound(pool.begin(), pool.end(), dm.bytes(),
-            [](const M& e, size_t s) { return e.bytes() < s; });
+        // insert memory in (sorted) pool
+        auto it = std::lower_bound(pool.begin(), pool.end(), dm.capacity(),
+            [](const M& e, size_t s) { return e.capacity() < s; });
         pool.insert(it, std::move(dm));
-        if(pool.size() >= 2 * m_max_outstanding)
-            pool.pop_back();
     }
 };
 
