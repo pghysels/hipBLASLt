@@ -24,164 +24,43 @@
  *
  *******************************************************************************/
 
-#include <thrust/for_each.h>
-#include <thrust/iterator/counting_iterator.h>
-#include <thrust/execution_policy.h>
-#include <rocrand/rocrand.h>
-#include <rocrand/rocrand_xorwow.h>
-
 #include "hipblaslt_init.hpp"
 #include "hipblaslt_datatype2string.hpp"
 #include "hipblaslt_ostream.hpp"
 #include "hipblaslt_random.hpp"
 #include <hipblaslt/hipblaslt.h>
 
+template<typename T, typename F>
+__global__ void fill_kernel(T* A, size_t size, F f)
+{
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx < size)
+        A[idx] = f(idx);
+}
 
 template<typename T, typename F>
 void fill_batch(T* A, size_t M, size_t N, size_t lda, size_t stride, size_t batch_count, const F& f)
 {
-    thrust::for_each_n(thrust::device, thrust::counting_iterator(0), std::max(lda * N, stride) * batch_count, f);
+    size_t size = std::max(lda * N, stride) * batch_count;
+    size_t block_size = 256;
+    size_t grid_size = (size + block_size - 1) / block_size;
+    fill_kernel<<<dim3(grid_size), dim3(block_size), 0, hipStreamDefault>>>(A, size, f);
 }
 
 __device__ uint32_t pseudo_random_device(size_t idx)
 {
-    rocrand_state_xorwow state;
-    rocrand_init(idx, 0, 0, &state);
-    return rocrand(&state);
-}
-
-template<typename T>
-__device__ T random_generator_device(size_t idx)
-{
-    return T(pseudo_random_device(idx) % 10 + 1.f);
-}
-
-template<typename T>
-__device__ T random_hpl_generator_device(size_t idx)
-{
-    auto r = pseudo_random_device(idx);
-    return T(double(r) / double(std::numeric_limits<decltype(r)>::max()) - 0.5);
-}
-
-template<typename T>
-__device__ T random_inf_generator_device(size_t idx)
-{
-    return T(pseudo_random_device(idx) & 1 ? -std::numeric_limits<double>::infinity() 
-                                           : std::numeric_limits<double>::infinity());
-}
-
-template<typename T>
-__device__ T random_zero_generator_device(size_t idx)
-{
-    return T(pseudo_random_device(idx) & 1 ? -0.0 : 0.0);
-}
-
-template <typename T>
-void hipblaslt_init_device(T* A, size_t M, size_t N, size_t lda, size_t stride, size_t batch_count)
-{
-    fill_batch(A, M, N, lda, stride, batch_count,
-        [A](size_t idx) { A[idx] = random_generator_device<T>(idx); });
-}
-
-template <typename T>
-void hipblaslt_init_device_small(
-    T* A, size_t M, size_t N, size_t lda, size_t stride, size_t batch_count)
-{
-    if constexpr(std::is_same<T,float>::value || 
-                 std::is_same<T,double>::value ||
-                 std::is_same<T,hipblasLtHalf>::value ||
-                 std::is_same<T,int32_t>::value)
+    // Numerical Recipes ranqd1, Chapter 7.1, §An Even Quicker Generator, Eq. 7.1.6. parameters from Knuth and H. W. Lewis
+    auto s = idx * 1664525 + 1013904223;
+    // Run a few extra iterations to make the generators diverge
+    // in case the seeds are still poor (consecutive ints)
+    for(int i = 0; i < 2; i++)
     {
-        fill_batch(A, M, N, lda, stride, batch_count,
-            [A](size_t idx) { A[idx] = T(random_generator_device<T>(idx) / 10.0f); } );
+        // Marsaglia, G. (2003). "Xorshift RNGs". Journal of Statistical Software. 8 (14). doi:10.18637/jss.v008.i14
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
     }
-    else
-        hipblaslt_cerr << "Error type in hipblaslt_init_device_small" << std::endl;
-}
-
-template <typename T>
-inline void hipblaslt_init_device_sin(
-    T* A, size_t M, size_t N, size_t lda, size_t stride, size_t batch_count)
-{
-    fill_batch(A, M, N, lda, stride, batch_count,
-        [A](size_t idx) { A[idx] = T(sin(double(idx))); } );
-}
-
-template <typename T>
-inline void hipblaslt_init_device_alternating_sign(
-    T* A, size_t M, size_t N, size_t lda, size_t stride, size_t batch_count)
-{
-    stride = std::max(lda * N, stride);
-    fill_batch(A, M, N, lda, stride, batch_count,
-        [A,stride,lda](size_t idx) { 
-            auto b = idx / stride;
-            auto j = (idx - b * stride) / lda;
-            auto i = (idx - b * stride) - j * lda;
-            auto value = random_generator_device<T>(idx);
-            A[idx] = (i ^ j) & 1 ? value : negate(value); 
-        } );
-}
-
-template <typename T>
-inline void hipblaslt_init_device_cos(
-    T* A, size_t M, size_t N, size_t lda, size_t stride, size_t batch_count)
-{
-    fill_batch(A, M, N, lda, stride, batch_count,
-        [A](size_t idx) { A[idx] = T(cos(double(idx))); } );
-}
-
-template <typename T>
-inline void hipblaslt_init_device_hpl(
-    T* A, size_t M, size_t N, size_t lda, size_t stride, size_t batch_count)
-{
-    fill_batch(A, M, N, lda, stride, batch_count,
-        [A,stride,lda](size_t idx) { A[idx] = random_hpl_generator_device<T>(idx); } );
-}
-
-template <typename T>
-inline void hipblaslt_init_device_nan(
-    T* A, size_t M, size_t N, size_t lda, size_t stride, size_t batch_count)
-{
-    // generate 100 random NaN's on host, and copy to device
-    std::array<T,100> rand_nans;
-    for(auto& r : rand_nans)
-        r = T(hipblaslt_nan_rng());
-    fill_batch(A, M, N, lda, stride, batch_count,
-        [A,rand_nans](size_t idx) { A[idx] = rand_nans[pseudo_random_device(idx) % rand_nans.size()]; });
-}
-
-template <typename T>
-inline void hipblaslt_init_device_inf(
-    T* A, size_t M, size_t N, size_t lda, size_t stride, size_t batch_count)
-{
-    fill_batch(A, M, N, lda, stride, batch_count,
-        [A](size_t idx) { A[idx] = random_inf_generator_device<T>(idx); } );
-}
-
-template <typename T>
-inline void hipblaslt_init_device_zero(
-    T* A, size_t M, size_t N, size_t lda, size_t stride, size_t batch_count)
-{
-    fill_batch(A, M, N, lda, stride, batch_count,
-        [A](size_t idx) { A[idx] = T(0); } );
-}
-
-template <typename T>
-inline void hipblaslt_init_device_alt_impl_big(
-    T* A, size_t M, size_t N, size_t lda, size_t stride, size_t batch_count)
-{
-    const hipblasLtHalf ieee_half_max(65280.0);
-    fill_batch(A, M, N, lda, stride, batch_count,
-        [A,ieee_half_max](size_t idx) { A[idx] = T(ieee_half_max); } );
-}
-
-template <typename T>
-inline void hipblaslt_init_device_alt_impl_small(
-    T* A, size_t M, size_t N, size_t lda, size_t stride, size_t batch_count)
-{
-    const hipblasLtHalf ieee_half_small(0.0000607967376708984375);
-    fill_batch(A, M, N, lda, stride, batch_count,
-        [A,ieee_half_small](size_t idx) { A[idx] = T(ieee_half_small); } );
+    return s;
 }
 
 template<typename T>
@@ -197,7 +76,11 @@ void hipblaslt_init_device(ABC         abc,
 {
     if(is_nan)
     {
-        hipblaslt_init_device_nan<T>(A, M, N, lda, stride, batch_count);
+        std::array<T,100> rand_nans;
+        for(auto& r : rand_nans)
+            r = T(hipblaslt_nan_rng());
+        fill_batch(A, M, N, lda, stride, batch_count,
+            [rand_nans](size_t idx) -> T { return rand_nans[pseudo_random_device(idx) % rand_nans.size()]; });
     }
     else
     {
@@ -205,29 +88,50 @@ void hipblaslt_init_device(ABC         abc,
         {
         case hipblaslt_initialization::rand_int:
             if(abc == ABC::A || abc == ABC::C)
-                hipblaslt_init_device<T>(A, M, N, lda, stride, batch_count);
+                fill_batch(A, M, N, lda, stride, batch_count,
+                    [](size_t idx) -> T { return T(pseudo_random_device(idx) % 10 + 1.f); });
             else if(abc == ABC::B)
-                hipblaslt_init_device_alternating_sign<T>(A, M, N, lda, stride, batch_count);
+            {
+                stride = std::max(lda * N, stride);
+                fill_batch(A, M, N, lda, stride, batch_count,
+                    [stride,lda](size_t idx) -> T {
+                        auto b = idx / stride;
+                        auto j = (idx - b * stride) / lda;
+                        auto i = (idx - b * stride) - j * lda;
+                        auto value = T(pseudo_random_device(idx) % 10 + 1.f);
+                        return (i ^ j) & 1 ? value : negate(value);
+                } );
+            }
             break;
         case hipblaslt_initialization::trig_float:
             if(abc == ABC::A || abc == ABC::C)
-                hipblaslt_init_device_sin(A, M, N, lda, stride, batch_count);
+                fill_batch(A, M, N, lda, stride, batch_count,
+                    [](size_t idx) -> T { return T(sin(double(idx))); } );
             else if(abc == ABC::B)
-                hipblaslt_init_device_cos(A, M, N, lda, stride, batch_count);
+                fill_batch(A, M, N, lda, stride, batch_count,
+                    [](size_t idx) -> T { return T(cos(double(idx))); } );
             break;
         case hipblaslt_initialization::hpl:
-            hipblaslt_init_device_hpl(A, M, N, lda, stride, batch_count);
+            fill_batch(A, M, N, lda, stride, batch_count,
+                [](size_t idx) -> T {
+                    auto r = pseudo_random_device(idx);
+                    return T(double(r) / double(std::numeric_limits<decltype(r)>::max()) - 0.5);
+                } );
             break;
         case hipblaslt_initialization::special:
             if (abc == ABC::A)
-                hipblaslt_init_device_alt_impl_big(A, M, N, lda, stride, batch_count);
+                fill_batch(A, M, N, lda, stride, batch_count,
+                    [](size_t idx) -> T { return T(hipblasLtHalf(65280.0)); } );
             else if(abc == ABC::B)
-                hipblaslt_init_device_alt_impl_small(A, M, N, lda, stride, batch_count);
+                fill_batch(A, M, N, lda, stride, batch_count,
+                    [](size_t idx) -> T { return T(hipblasLtHalf(0.0000607967376708984375)); } );
             else if(abc == ABC::C)
-                hipblaslt_init_device(A, M, N, lda, stride, batch_count);
+                fill_batch(A, M, N, lda, stride, batch_count,
+                    [](size_t idx) -> T { return T(pseudo_random_device(idx) % 10 + 1.f); });
             break;
         case hipblaslt_initialization::zero:
-            hipblaslt_init_device_zero(A, M, N, lda, stride, batch_count);
+            fill_batch(A, M, N, lda, stride, batch_count, [](size_t idx) -> T { return T(0); } );
+            break;
         default:
             hipblaslt_cerr << "Error type in hipblaslt_init_device" << std::endl;
             break;
