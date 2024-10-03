@@ -1629,7 +1629,7 @@ void initTensileGemmData(rocblaslt_handle       handle,
         void* tmp = nullptr;
         static_cast<void>(hipHostMalloc(&tmp, INTERNAL_HIPHOSTMEM_SIZE, 0));
         data.hipHostMemory
-            = std::shared_ptr<void>(tmp, [](auto p) { static_cast<void>(hipFree(p)); });
+            = std::shared_ptr<void>(tmp, [](auto p) { static_cast<void>(hipHostFree(p)); });
         data.hipHostMemorySize = INTERNAL_HIPHOSTMEM_SIZE;
 
         gemmData = std::static_pointer_cast<void>(std::make_shared<TensileDataGroupedGemm>(data));
@@ -2018,7 +2018,7 @@ rocblaslt_status makeArgument(rocblaslt_handle             handle,
                     void* tmp = nullptr;
                     static_cast<void>(hipHostMalloc(&tmp, requiedHostSize, 0));
                     data->hipHostMemory
-                        = std::shared_ptr<void>(tmp, [](auto p) { static_cast<void>(hipFree(p)); });
+                        = std::shared_ptr<void>(tmp, [](auto p) { static_cast<void>(hipHostFree(p)); });
                     data->hipHostMemorySize = requiedHostSize;
                 }
 
