@@ -168,6 +168,9 @@ namespace TensileLite
 
         TENSILE_SERIALIZE_VECTOR(true, ExactSelectionTableEntry);
 
+        // TENSILE_SERIALIZE_VECTOR(true, float);
+        TENSILE_SERIALIZE_VECTOR(false, float);
+
         TENSILE_SERIALIZE_VECTOR(true,
                                  TensileLite::ExactLogicLibrary<TensileLite::ContractionProblemGemm,
                                                             TensileLite::ContractionSolution,

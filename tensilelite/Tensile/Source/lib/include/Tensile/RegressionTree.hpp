@@ -199,6 +199,7 @@ namespace TensileLite
                         std::cout << "Tree " << treenum << " predicts: " << result << std::endl;
                         std::cout << "Accummulated value: " << rv << std::endl;
                     }
+                    treenum++;
                 }
                 return rv;
             }

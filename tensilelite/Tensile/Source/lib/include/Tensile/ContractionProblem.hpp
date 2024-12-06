@@ -911,6 +911,9 @@ namespace TensileLite
             case ExperimentalOption::RTree:
                 return PerformanceMetric::ExperimentalRTree;
 
+            case ExperimentalOption::MLP:
+                return PerformanceMetric::ExperimentalMLP;
+
             default:
                 // warning?
                 return m_performanceMetric;

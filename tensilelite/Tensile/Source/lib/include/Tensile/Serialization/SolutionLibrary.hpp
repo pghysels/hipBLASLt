@@ -46,6 +46,7 @@
 #include <Tensile/Serialization/MatchingLibrary.hpp>
 #include <Tensile/Serialization/PlaceholderLibrary.hpp>
 #include <Tensile/Serialization/RegressionTreeLibrary.hpp>
+#include <Tensile/Serialization/MLPRegressionLibrary.hpp>
 
 namespace TensileLite
 {
@@ -82,7 +83,8 @@ namespace TensileLite
                      Base::template Pair<GranularitySelectionLibrary<MyProblem, MySolution>>(),
                      Base::template Pair<PlaceholderLibrary<MyProblem, MySolution>>(),
                      Base::template Pair<DecisionTreeLibrary<MyProblem, MySolution>>(),
-                     Base::template Pair<RegressionTreeLibrary<MyProblem, MySolution>>()});
+                     Base::template Pair<RegressionTreeLibrary<MyProblem, MySolution>>(),
+                     Base::template Pair<MLPRegressionLibrary<MyProblem, MySolution>>()});
             }
         };
 
