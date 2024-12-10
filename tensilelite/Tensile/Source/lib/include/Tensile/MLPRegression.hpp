@@ -2,7 +2,7 @@
  *
  * MIT License
  *
- * Copyright (C) 2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -77,10 +77,10 @@ namespace TensileLite
                 float gflops = M * N * K / 1.e9;
                 float reads = M*N + M*K + K*N;
                 Fin = 
-                    {M,
-                     N,
-                     K,
-                     M * N,    // log?
+                    {std::log(M),
+                     std::log(N),
+                     std::log(K),
+                     std::log(M * N),
                      float(int(M) % 256),
                      float(int(N) % 256),
                      float(int(K) % 256),
