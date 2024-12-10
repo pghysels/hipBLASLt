@@ -2,7 +2,7 @@
  *
  * MIT License
  *
- * Copyright (C) 2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -57,10 +57,10 @@ namespace TensileLite
 
                 int node = 0;
                 while (left[node] >= 0)
-                    node = (key[feature[node]] <= threshold[node]) ?
+                    node = (key[feature_solution[node]] <= threshold[node]) ?
                         left[node] : right[node];
                 
-                return solution[node];
+                return feature_solution[node];
             }
             
             std::string description() const
@@ -68,7 +68,7 @@ namespace TensileLite
                 return "Tree";
             }
 
-            std::vector<int> left, right, feature, solution;
+            std::vector<int> left, right, feature_solution;
             std::vector<float> threshold;
         };
 
