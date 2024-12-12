@@ -34,7 +34,7 @@ namespace TensileLite
 {
     /**
      * \ingroup Tensile
-     * \defgroup MLPRegression MLP Regression 
+     * \defgroup MLPRegression MLP Regression
      *
      * @brief Regression model using multilayer perceptron
      *
@@ -47,7 +47,7 @@ namespace TensileLite
      */
     namespace MLPRegression
     {
-        
+
         struct StandardScaler
         {
             void transform(std::vector<float>& F) const
@@ -67,41 +67,30 @@ namespace TensileLite
 
             std::vector<float> predict(std::vector<float> const& probkey) const
             {
-                const int dmax = *std::max_element(dims.begin(), dims.end());
-                const int layers = dims.size() - 1;
-                std::vector<float> Fin, Fout;
-                Fout.reserve(dmax);
-                Fin.reserve(dmax);
-
                 float M = probkey[0], N = probkey[1], /*B = probkey[2],*/ K = probkey[3];
-                float gflops = M * N * K / 1.e9;
-                float reads = M*N + M*K + K*N;
-                Fin = 
-                    {std::log(M),
-                     std::log(N),
-                     std::log(K),
-                     std::log(M * N),
-                     float(int(M) % 256),
-                     float(int(N) % 256),
-                     float(int(K) % 256),
-                     gflops,
-                     reads,
-                     std::log(gflops/reads)};
+                float gflops = M * N * K / 1.e9, reads = M*N + M*K + K*N;
+                std::vector<float> F =
+                    {std::log(M), std::log(N), std::log(K), std::log(M * N),
+                     float(int(M) % 256), float(int(N) % 256), float(int(K) % 256),
+                     gflops, reads, std::log(gflops/reads)};
 
-                scaler.transform(Fin);
+                scaler.transform(F);
 
-                for (int l=0; l<layers; l++)
+                const int layers = dims.size()-1;
+                for (int l=0; l<dims.size()-1; l++)
                 {
-                    Fout = bias[l];
+                    auto Ftmp = bias[l];
                     for (int i=0; i<dims[l+1]; i++)
                     {
                         for (int j=0; j<dims[l]; j++)
-                            Fout[i] += weights[l][j+i*dims[l]] * Fin[j];
-                        Fout[i] = Fout[i] > 0. ? Fout[i] : 0.;
+                            Ftmp[i] += weights[l][i+j*dims[l+1]] * F[j];
+                            // Ftmp[i] += weights[l][j+i*dims[l]] * F[j];
+                        if (l < layers-1)
+                            Ftmp[i] = std::max(Ftmp[i], 0.f);
                     }
-                    std::swap(Fin, Fout);
+                    std::swap(Ftmp, F);
                 }
-                return Fin;
+                return F;
             }
 
             std::string description() const

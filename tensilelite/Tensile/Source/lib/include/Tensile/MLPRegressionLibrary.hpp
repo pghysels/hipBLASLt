@@ -2,7 +2,7 @@
  *
  * MIT License
  *
- * Copyright (C) 2022-2023 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2022-2024 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -98,21 +98,13 @@ namespace TensileLite
                                                              double*          fitness
                                                              = nullptr) const override
         {
-            // TODO this isn't used?
             std::vector<float> problemkey
                 = ProblemKey::keyForProblem<std::vector<float>, MyProblem, float>(
                     problem, this->probFeatures);
 
-            // auto effs = model->predict(problemkey);
-            // auto sol = solutionmap.begin();
-            // std::advance(sol, 
-            //              std::distance(effs.cbegin(), 
-            //                            std::max_element(effs.cbegin(), effs.cend())));
-            // return sol->second;
-
-            std::cout << "MLPRegressionLibrary::findBestSolution" << std::endl;
-
-            return solutionmap.find(tree->predict(problemkey))->second;
+            auto sol = solutionmap.begin();
+            std::advance(sol, tree->predict(problemkey));
+            return sol->second;
         }
 
         virtual SolutionSet<MySolution>
@@ -148,28 +140,25 @@ namespace TensileLite
                                                             Hardware const&  hardware,
                                                             int numSolutions) const override
         {
-            std::cout << "MLPRegressionLibrary::findTopSolution(numSolutions=" 
-                      << numSolutions << ")" << std::endl;
-            
-            if(numSolutions == 1)
-                return SolutionVector<MySolution>({findBestSolution(problem, hardware)});
+            // if(numSolutions == 1)
+            //     return SolutionVector<MySolution>({findBestSolution(problem, hardware)});
 
             std::vector<float> problemkey
                 = ProblemKey::keyForProblem<std::vector<float>, MyProblem, float>(
                     problem, this->probFeatures);
 
-            auto effs = model->predict(problemkey);
+            auto pred_time = model->predict(problemkey);
 
             std::vector<std::pair<float, int>> solutionRank;
             solutionRank.reserve(solutionmap.size());
             int i = 0;
             for(auto& s : solutionmap)
-                solutionRank.emplace_back(effs[i++], s.first);
+                solutionRank.emplace_back(pred_time[i++], s.first);
 
             numSolutions = std::min(numSolutions, int(solutionmap.size()));
             std::partial_sort
                 (solutionRank.begin(), solutionRank.begin() + numSolutions,
-                 solutionRank.end(), std::greater{});
+                 solutionRank.end());
 
             SolutionVector<MySolution> rv;
             rv.reserve(numSolutions);
