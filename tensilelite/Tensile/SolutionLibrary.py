@@ -183,7 +183,7 @@ class DecisionTreeLibrary:
         origTrees = d["trees"]
 
         trees = []
-        
+
         if "fallback" in d:
             fallbackIndex = d["fallback"]
             nullValue = SingleSolutionLibrary(solutions[fallbackIndex])
@@ -244,7 +244,7 @@ class RegressionTreeLibrary:
     @property
     def tag(self):
         return self.__class__.Tag
-    
+
     def merge(self, other):
         raise RuntimeError(
             "RegressionTreeLibrary does not support merging."
@@ -257,6 +257,47 @@ class RegressionTreeLibrary:
         self.table = table
         self.trees = trees
         self.solutionFeatures = solution_features
+        self.problemFeatures = problem_features
+
+class MLPRegressionLibrary:
+    Tag = "MLPRegression"
+    StateKeys = [("type", "tag"), "table", "mlp", "tree", "problemFeatures"]
+
+    @classmethod
+    def FromOriginalState(cls, d, solutions):
+        origTable = d["table"]
+        table = []
+
+        try:
+            indexStart  = origTable[0]
+            indexOffset = origTable[1]
+            for index in range(indexStart, indexStart + indexOffset):
+                value = IndexSolutionLibrary(solutions[index])
+                table.append(value)
+        except KeyError:
+            pass
+
+        mlp = d["mlp"]
+        tree = d["tree"]
+        problem_features = d["problemFeatures"]
+        return cls(table, mlp, tree, problem_features)
+
+    @property
+    def tag(self):
+        return self.__class__.Tag
+
+    def merge(self, other):
+        raise RuntimeError(
+            "MLPRegressionLibrary does not support merging."
+        )
+
+    def remapSolutionIndices(self, indexMap):
+        pass
+
+    def __init__(self, table, mlp, tree, problem_features):
+        self.table = table
+        self.mlp = mlp
+        self.tree = tree
         self.problemFeatures = problem_features
 
 class ProblemMapLibrary:
@@ -437,6 +478,12 @@ class MasterSolutionLibrary:
                 predicate = Properties.Predicate(tag="TruePred")
 
                 regressionLib = RegressionTreeLibrary.FromOriginalState(d["Library"], solutions)
+                library = PredicateLibrary(tag="Problem")
+                library.rows.append({"predicate": predicate, "library": regressionLib})
+            elif d["LibraryType"] == "MLPRegression":
+                predicate = Properties.Predicate(tag="TruePred")
+
+                regressionLib = MLPRegressionLibrary.FromOriginalState(d["Library"], solutions)
                 library = PredicateLibrary(tag="Problem")
                 library.rows.append({"predicate": predicate, "library": regressionLib})
             else:

@@ -1934,6 +1934,41 @@ namespace TensileLite
                 }
             };
 
+            struct ExperimentalMLP
+                : public Predicate_CRTP<ExperimentalMLP, ContractionProblemGemm>
+            {
+                enum
+                {
+                    HasIndex = false,
+                    HasValue = false
+                };
+
+                ExperimentalMLP() = default;
+
+                static std::string Type()
+                {
+                    return "ExperimentalMLP";
+                }
+
+                virtual bool operator()(ContractionProblemGemm const& problem) const override
+                {
+                    return (problem.performanceMetric() == PerformanceMetric::ExperimentalMLP);
+                }
+
+                virtual bool debugEval(ContractionProblemGemm const& problem,
+                                       std::ostream&                 stream) const override
+                {
+                    return debugEvalCmp(problem,
+                                        stream,
+                                        "prob",
+                                        problem.performanceMetric(),
+                                        "==",
+                                        "sol: PerformanceMetric::ExperimentalMLP",
+                                        PerformanceMetric::ExperimentalMLP);
+                }
+            };
+
+
             struct EqualityMatching
                 : public Predicate_CRTP<EqualityMatching, ContractionProblemGemm>
             {

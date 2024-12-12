@@ -226,7 +226,21 @@ namespace TensileLite
                                                             Hardware const&  hardware,
                                                             int numSolutions) const override
         {
-            return library->findTopSolutions(problem, hardware, numSolutions);
+            if(Debug::Instance().printSolutionSelectionTime())
+            {
+                auto start  = std::chrono::steady_clock::now();
+                auto result = library->findTopSolutions(problem, hardware, numSolutions);
+                auto end    = std::chrono::steady_clock::now();
+
+                double time = std::chrono::duration<double, std::micro>(end - start).count();
+                std::cout << "Solution selection time: " << time << " us" << std::endl;
+
+                return result;
+            }
+            else
+            {
+                return library->findTopSolutions(problem, hardware, numSolutions);
+            }
         }
 
         virtual SolutionVector<MySolution>
