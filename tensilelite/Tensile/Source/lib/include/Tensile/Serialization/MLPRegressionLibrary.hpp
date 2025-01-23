@@ -2,7 +2,7 @@
  *
  * MIT License
  *
- * Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2024-2025 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -54,7 +54,6 @@ namespace TensileLite
             const static bool flow = false;
         };
 
-
         template <typename IO>
         struct MappingTraits<MLPRegression::StandardScaler, IO>
         {
@@ -64,7 +63,7 @@ namespace TensileLite
             static void mapping(IO& io, Scaler& scaler)
             {
                 iot::mapRequired(io, "mean", scaler.mean);
-                iot::mapRequired(io, "var", scaler.var);
+                iot::mapRequired(io, "scale", scaler.scale);
             }
 
             const static bool flow = false;
@@ -78,10 +77,40 @@ namespace TensileLite
 
             static void mapping(IO& io, MLP& mlp)
             {
-                iot::mapRequired(io, "dimensions", mlp.dims);
-                iot::mapRequired(io, "weights", mlp.weights);
-                iot::mapRequired(io, "bias", mlp.bias);
                 iot::mapRequired(io, "scaler", mlp.scaler);
+                iot::mapRequired(io, "res_blocks", mlp.res_blocks);
+                iot::mapRequired(io, "dense", mlp.dense);
+            }
+
+            const static bool flow = false;
+        };
+
+        template <typename IO>
+        struct MappingTraits<MLPRegression::DenseLayer, IO>
+        {
+            using DenseLayer = MLPRegression::DenseLayer;
+            using iot = IOTraits<IO>;
+
+            static void mapping(IO& io, DenseLayer& l)
+            {
+                iot::mapRequired(io, "weight", l.weight);
+                iot::mapRequired(io, "bias", l.bias);
+            }
+
+            const static bool flow = false;
+        };
+
+        template <typename IO>
+        struct MappingTraits<MLPRegression::ResBlock, IO>
+        {
+            using ResBlock = MLPRegression::ResBlock;
+            using iot = IOTraits<IO>;
+
+            static void mapping(IO& io, ResBlock& block)
+            {
+                iot::mapRequired(io, "linear1", block.linear1);
+                iot::mapRequired(io, "linear2", block.linear2);
+                iot::mapRequired(io, "res", block.res);
             }
 
             const static bool flow = false;

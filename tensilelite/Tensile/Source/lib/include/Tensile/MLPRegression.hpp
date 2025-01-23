@@ -2,7 +2,7 @@
  *
  * MIT License
  *
- * Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2024-2025 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,6 +29,7 @@
 #include <array>
 #include <functional>
 #include <vector>
+#include <algorithm>
 
 namespace TensileLite
 {
@@ -50,47 +51,71 @@ namespace TensileLite
 
         struct StandardScaler
         {
-            void transform(std::vector<float>& F) const
+            void operator()(std::vector<float>& F) const
             {
-                assert(mean.size() == F.size() && var.size() == F.size());
+                assert(mean.size() == F.size() && scale.size() == F.size());
                 std::transform(F.begin(), F.end(), mean.begin(), F.begin(), std::minus{});
-                std::transform(F.begin(), F.end(), var.begin(), F.begin(), std::divides{});
+                std::transform(F.begin(), F.end(), scale.begin(), F.begin(), std::divides{});
             }
 
-            std::vector<float> mean, var;
+            std::vector<float> mean, scale;
+        };
+
+        inline std::vector<float>& activation(std::vector<float>& F)
+        {
+            for (auto& f : F)    // relu
+                f = std::max(f, 0.f);
+            return F;
+        }
+
+        inline std::vector<float> activation(std::vector<float>&& F)
+        {
+            return activation(F);
+        }
+
+        struct DenseLayer
+        {
+            std::vector<float> operator()(const std::vector<float>& F) const
+            {
+                auto Fout = bias;
+                for (int i=0; i<Fout.size(); i++)
+                    for (int j=0; j<F.size(); j++)
+                        Fout[i] += weight[j+i*F.size()] * F[j];
+                return Fout;
+            }
+
+            std::vector<float> weight, bias;
+        };
+
+        struct ResBlock
+        {
+            std::vector<float> operator()(const std::vector<float>& F) const
+            {
+                auto Fout = linear2(activation(linear1(F)));
+                auto Fres = res(F);
+                std::transform(Fout.begin(), Fout.end(), Fres.begin(), Fout.begin(), std::plus{});
+                return activation(Fout);
+            }
+
+            DenseLayer linear1, linear2, res;
         };
 
         struct MLP
         {
-
             MLP() = default;
 
             std::vector<float> predict(std::vector<float> const& probkey) const
             {
                 float M = probkey[0], N = probkey[1], /*B = probkey[2],*/ K = probkey[3];
-                float gflops = M * N * K / 1.e9, reads = M*N + M*K + K*N;
+                float gflops = M * N * K / 1.e9, reads = (M*N + M*K + K*N) / 1.e6;
                 std::vector<float> F =
-                    {std::log(M), std::log(N), std::log(K), std::log(M * N),
+                    {M, N, K, std::log(M * N),
                      float(int(M) % 256), float(int(N) % 256), float(int(K) % 256),
-                     gflops, reads, std::log(gflops/reads)};
-
-                scaler.transform(F);
-
-                const int layers = dims.size()-1;
-                for (int l=0; l<dims.size()-1; l++)
-                {
-                    auto Ftmp = bias[l];
-                    for (int i=0; i<dims[l+1]; i++)
-                    {
-                        for (int j=0; j<dims[l]; j++)
-                            Ftmp[i] += weights[l][i+j*dims[l+1]] * F[j];
-                            // Ftmp[i] += weights[l][j+i*dims[l]] * F[j];
-                        if (l < layers-1)
-                            Ftmp[i] = std::max(Ftmp[i], 0.f);
-                    }
-                    std::swap(Ftmp, F);
-                }
-                return F;
+                     gflops, reads, gflops/reads};
+                scaler(F);
+                for (auto& res : res_blocks)
+                    F = res(F);
+                return dense(F);
             }
 
             std::string description() const
@@ -98,8 +123,8 @@ namespace TensileLite
                 return "MLPRegression";
             }
 
-            std::vector<int> dims;
-            std::vector<std::vector<float>> weights, bias;
+            std::vector<ResBlock> res_blocks;
+            DenseLayer dense;
             StandardScaler scaler;
         };
 

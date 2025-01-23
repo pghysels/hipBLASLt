@@ -2,7 +2,7 @@
  *
  * MIT License
  *
- * Copyright (C) 2022-2024 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2022-2025 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -102,9 +102,16 @@ namespace TensileLite
                 = ProblemKey::keyForProblem<std::vector<float>, MyProblem, float>(
                     problem, this->probFeatures);
 
-            auto sol = solutionmap.begin();
-            std::advance(sol, tree->predict(problemkey));
-            return sol->second;
+            auto winner = tree->predict(problemkey);
+            for (auto& s : solutionmap)
+            {
+                if (s.second->libraryLogicIndex == winner)
+                {
+                    return s.second;
+                }
+            }
+            // TODO assert we don't get here
+            return 0;
         }
 
         virtual SolutionSet<MySolution>
@@ -140,8 +147,8 @@ namespace TensileLite
                                                             Hardware const&  hardware,
                                                             int numSolutions) const override
         {
-            // if(numSolutions == 1)
-            //     return SolutionVector<MySolution>({findBestSolution(problem, hardware)});
+            if(numSolutions == 1)
+                return SolutionVector<MySolution>({findBestSolution(problem, hardware)});
 
             std::vector<float> problemkey
                 = ProblemKey::keyForProblem<std::vector<float>, MyProblem, float>(
@@ -153,19 +160,44 @@ namespace TensileLite
             solutionRank.reserve(solutionmap.size());
             int i = 0;
             for(auto& s : solutionmap)
-                solutionRank.emplace_back(pred_time[i++], s.first);
+            {
+                solutionRank.emplace_back(pred_time[i], /*s.first*/i);
+                i++;
+            }
 
             numSolutions = std::min(numSolutions, int(solutionmap.size()));
             std::partial_sort
                 (solutionRank.begin(), solutionRank.begin() + numSolutions,
-                 solutionRank.end());
+                 solutionRank.end(), std::greater{});
+
+            // std::cout << "idx " << solutionRank[0].second << std::endl;
+
+            // i = 0;
+            // for(auto& s : solutionmap)
+            // {
+            //     std::cout << "solution " << i++ << " " << s.first << std::endl;
+            //     std::cout << "solution.index " << s.second->index << std::endl;
+            //     std::cout << "solution.libraryLogicIndex " << s.second->libraryLogicIndex << std::endl;
+            // }
 
             SolutionVector<MySolution> rv;
             rv.reserve(numSolutions);
             for(int i=0; i<numSolutions; i++)
             {
-                auto indexMatch = solutionmap.find(solutionRank[i].second);
-                rv.push_back(indexMatch->second);
+                // std::cout << "i= " << i << std::endl;
+                // auto indexMatch = solutionmap.find(solutionRank[i].second);
+                // TODO fix this double loop
+                for (auto& s : solutionmap)
+                {
+                    // std::cout << "s.second->libraryLogicIndex " << s.second->libraryLogicIndex << std::endl;
+                    if (s.second->libraryLogicIndex == solutionRank[i].second)
+                    {
+                        // auto indexMatch = solutionmap.find(solutionRank[i].second);
+                        // rv.push_back(indexMatch->second);
+                        rv.push_back(s.second);
+                        break;
+                    }
+                }
             }
 
             return rv;

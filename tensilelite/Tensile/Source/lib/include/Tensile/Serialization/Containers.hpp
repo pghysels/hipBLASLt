@@ -2,7 +2,7 @@
  *
  * MIT License
  *
- * Copyright (C) 2022-2024 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2022-2025 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,6 +32,7 @@
 #include <Tensile/ContractionProblemPredicates.hpp>
 #include <Tensile/DecisionTreeLibrary.hpp>
 #include <Tensile/RegressionTreeLibrary.hpp>
+#include <Tensile/MLPRegressionLibrary.hpp>
 #include <Tensile/ExactLogicLibrary.hpp>
 #include <Tensile/FreeSizeLibrary.hpp>
 #include <Tensile/GranularitySelectionLibrary.hpp>
@@ -236,6 +237,8 @@ namespace TensileLite
                   false>
         {
         };
+
+        TENSILE_SERIALIZE_VECTOR(true, TensileLite::MLPRegression::ResBlock);
 
 
         template <typename T, size_t N, typename IO>
