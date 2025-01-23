@@ -33,7 +33,7 @@
 #include <Tensile/Debug.hpp>
 #include <Tensile/MLFeatures.hpp>
 #include <Tensile/ProblemKey.hpp>
-#include <Tensile/MLPRegression.hpp>
+#include <Tensile/MLPClassification.hpp>
 #include <Tensile/ClassificationTree.hpp>
 #include <Tensile/SolutionLibrary.hpp>
 #include <Tensile/Utils.hpp>
@@ -47,9 +47,9 @@ namespace TensileLite
      */
 
     template <typename MyProblem, typename MySolution = typename MyProblem::Solution>
-    struct MLPRegressionLibrary : public SolutionLibrary<MyProblem, MySolution>
+    struct MLPClassificationLibrary : public SolutionLibrary<MyProblem, MySolution>
     {
-        using MLP              = MLPRegression::MLP;
+        using MLP              = MLPClassification::MLP;
         using Tree             = Classification::Tree;
         using SolutionFeatures = std::vector<std::shared_ptr<MLFeatures::MLFeature<MySolution>>>;
         using ProblemFeatures  = std::vector<std::shared_ptr<MLFeatures::MLFeature<MyProblem>>>;
@@ -62,7 +62,7 @@ namespace TensileLite
 
         static std::string Type()
         {
-            return "MLPRegression";
+            return "MLPClassification";
         }
         virtual std::string type() const override
         {
@@ -147,8 +147,9 @@ namespace TensileLite
                                                             Hardware const&  hardware,
                                                             int numSolutions) const override
         {
-            if(numSolutions == 1)
-                return SolutionVector<MySolution>({findBestSolution(problem, hardware)});
+            // Use DecisionTreeClassifier
+            // if(numSolutions == 1)
+            //     return SolutionVector<MySolution>({findBestSolution(problem, hardware)});
 
             std::vector<float> problemkey
                 = ProblemKey::keyForProblem<std::vector<float>, MyProblem, float>(
@@ -161,7 +162,7 @@ namespace TensileLite
             int i = 0;
             for(auto& s : solutionmap)
             {
-                solutionRank.emplace_back(pred_time[i], /*s.first*/i);
+                solutionRank.emplace_back(pred_time[i], i);
                 i++;
             }
 
@@ -170,30 +171,15 @@ namespace TensileLite
                 (solutionRank.begin(), solutionRank.begin() + numSolutions,
                  solutionRank.end(), std::greater{});
 
-            // std::cout << "idx " << solutionRank[0].second << std::endl;
-
-            // i = 0;
-            // for(auto& s : solutionmap)
-            // {
-            //     std::cout << "solution " << i++ << " " << s.first << std::endl;
-            //     std::cout << "solution.index " << s.second->index << std::endl;
-            //     std::cout << "solution.libraryLogicIndex " << s.second->libraryLogicIndex << std::endl;
-            // }
-
             SolutionVector<MySolution> rv;
             rv.reserve(numSolutions);
             for(int i=0; i<numSolutions; i++)
             {
-                // std::cout << "i= " << i << std::endl;
-                // auto indexMatch = solutionmap.find(solutionRank[i].second);
                 // TODO fix this double loop
                 for (auto& s : solutionmap)
                 {
-                    // std::cout << "s.second->libraryLogicIndex " << s.second->libraryLogicIndex << std::endl;
                     if (s.second->libraryLogicIndex == solutionRank[i].second)
                     {
-                        // auto indexMatch = solutionmap.find(solutionRank[i].second);
-                        // rv.push_back(indexMatch->second);
                         rv.push_back(s.second);
                         break;
                     }

@@ -35,18 +35,18 @@ namespace TensileLite
 {
     /**
      * \ingroup Tensile
-     * \defgroup MLPRegression MLP Regression
+     * \defgroup MLPClassification MLP Classification
      *
-     * @brief Regression model using multilayer perceptron
+     * @brief Classification model using multilayer perceptron
      *
      * Neural net used to estimate efficiency values for solutions in the
-     * library. Used for MLPRegressionLibrary.
+     * library. Used for MLPClassificationLibrary.
      */
 
     /**
-     * \ingroup MLPRegression
+     * \ingroup MLPClassification
      */
-    namespace MLPRegression
+    namespace MLPClassification
     {
 
         struct StandardScaler
@@ -100,9 +100,9 @@ namespace TensileLite
             DenseLayer linear1, linear2, res;
         };
 
-        struct MLP
+        struct TunaNet
         {
-            MLP() = default;
+            TunaNet() = default;
 
             std::vector<float> predict(std::vector<float> const& probkey) const
             {
@@ -120,7 +120,7 @@ namespace TensileLite
 
             std::string description() const
             {
-                return "MLPRegression";
+                return "TunaNet";
             }
 
             std::vector<ResBlock> res_blocks;
@@ -128,5 +128,5 @@ namespace TensileLite
             StandardScaler scaler;
         };
 
-     } // namespace MLPRegression
+     } // namespace MLPClassification
 } // namespace TensileLite

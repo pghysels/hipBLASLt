@@ -27,7 +27,7 @@
 #pragma once
 
 #include <Tensile/Debug.hpp>
-#include <Tensile/MLPRegressionLibrary.hpp>
+#include <Tensile/MLPClassificationLibrary.hpp>
 
 #include <cstddef>
 #include <unordered_set>
@@ -55,9 +55,9 @@ namespace TensileLite
         };
 
         template <typename IO>
-        struct MappingTraits<MLPRegression::StandardScaler, IO>
+        struct MappingTraits<MLPClassification::StandardScaler, IO>
         {
-            using Scaler = MLPRegression::StandardScaler;
+            using Scaler = MLPClassification::StandardScaler;
             using iot    = IOTraits<IO>;
 
             static void mapping(IO& io, Scaler& scaler)
@@ -70,12 +70,12 @@ namespace TensileLite
         };
 
         template <typename IO>
-        struct MappingTraits<MLPRegression::MLP, IO>
+        struct MappingTraits<MLPClassification::TunaNet, IO>
         {
-            using MLP = MLPRegression::MLP;
+            using TunaNet = MLPClassification::TunaNet;
             using iot = IOTraits<IO>;
 
-            static void mapping(IO& io, MLP& mlp)
+            static void mapping(IO& io, TunaNet& mlp)
             {
                 iot::mapRequired(io, "scaler", mlp.scaler);
                 iot::mapRequired(io, "res_blocks", mlp.res_blocks);
@@ -86,9 +86,9 @@ namespace TensileLite
         };
 
         template <typename IO>
-        struct MappingTraits<MLPRegression::DenseLayer, IO>
+        struct MappingTraits<MLPClassification::DenseLayer, IO>
         {
-            using DenseLayer = MLPRegression::DenseLayer;
+            using DenseLayer = MLPClassification::DenseLayer;
             using iot = IOTraits<IO>;
 
             static void mapping(IO& io, DenseLayer& l)
@@ -101,9 +101,9 @@ namespace TensileLite
         };
 
         template <typename IO>
-        struct MappingTraits<MLPRegression::ResBlock, IO>
+        struct MappingTraits<MLPClassification::ResBlock, IO>
         {
-            using ResBlock = MLPRegression::ResBlock;
+            using ResBlock = MLPClassification::ResBlock;
             using iot = IOTraits<IO>;
 
             static void mapping(IO& io, ResBlock& block)
@@ -117,9 +117,9 @@ namespace TensileLite
         };
 
         template <typename MyProblem, typename MySolution, typename IO>
-        struct MappingTraits<MLPRegressionLibrary<MyProblem, MySolution>, IO>
+        struct MappingTraits<MLPClassificationLibrary<MyProblem, MySolution>, IO>
         {
-            using Library = MLPRegressionLibrary<MyProblem, MySolution>;
+            using Library = MLPClassificationLibrary<MyProblem, MySolution>;
             using iot = IOTraits<IO>;
 
             static void mapping(IO& io, Library& lib)
@@ -128,7 +128,7 @@ namespace TensileLite
                 if(ctx == nullptr)
                 {
                     iot::setError(io,
-                                  "MLPRegressionLibrary requires that context be "
+                                  "MLPClassificationLibrary requires that context be "
                                   "set to a SolutionMap.");
                 }
                 std::vector<int> mappingIndices;
@@ -146,7 +146,7 @@ namespace TensileLite
                     iot::mapRequired(io, "table", mappingIndices);
                     if(mappingIndices.empty())
                         iot::setError(io,
-                                      "MLPRegressionLibrary requires non empty "
+                                      "MLPClassificationLibrary requires non empty "
                                       "mapping index set.");
 
                     for(int index : mappingIndices)
@@ -156,7 +156,7 @@ namespace TensileLite
                         {
                             iot::setError(
                                 io,
-                                concatenate("[MLPRegressionLibrary] Invalid solution index: ",
+                                concatenate("[MLPClassificationLibrary] Invalid solution index: ",
                                             index));
                         }
                         else
@@ -167,19 +167,20 @@ namespace TensileLite
                     }
                 }
 
-                using MLP = MLPRegression::MLP;
-                std::shared_ptr<MLP> model;
+                using TunaNet = MLPClassification::TunaNet;
+                std::shared_ptr<TunaNet> model;
                 if(iot::outputting(io))
                 {
-                    model = std::dynamic_pointer_cast<MLP>(lib.model);
+                    model = std::dynamic_pointer_cast<TunaNet>(lib.model);
                 }
                 else
                 {
-                    model     = std::make_shared<MLP>();
+                    model     = std::make_shared<TunaNet>();
                     lib.model = model;
                 }
                 iot::mapRequired(io, "mlp", *model);
 
+                // TODO probably remove the Tree from this library?
                 using Tree = Classification::Tree;
                 std::shared_ptr<Tree> tree;
                 if(iot::outputting(io))
