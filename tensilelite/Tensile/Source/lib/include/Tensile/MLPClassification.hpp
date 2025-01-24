@@ -78,9 +78,14 @@ namespace TensileLite
             std::vector<float> operator()(const std::vector<float>& F) const
             {
                 auto Fout = bias;
-                for (int i=0; i<Fout.size(); i++)
-                    for (int j=0; j<F.size(); j++)
-                        Fout[i] += weight[j+i*F.size()] * F[j];
+                const auto n_in = F.size(), n_out = Fout.size();
+                #pragma omp parallel for if(n_out*n_in > 32*32)
+                for (int i=0; i<n_out; i++) {
+                    float fi = 0.;
+                    for (int j=0; j<n_in; j++)
+                        fi += weight[j+i*n_in] * F[j];
+                    Fout[i] += fi;
+                }
                 return Fout;
             }
 
@@ -106,6 +111,8 @@ namespace TensileLite
 
             std::vector<float> predict(std::vector<float> const& probkey) const
             {
+                std::cout << "MLP predict" << std::endl;
+
                 float M = probkey[0], N = probkey[1], /*B = probkey[2],*/ K = probkey[3];
                 float gflops = M * N * K / 1.e9, reads = (M*N + M*K + K*N) / 1.e6;
                 std::vector<float> F =

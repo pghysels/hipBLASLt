@@ -1,6 +1,6 @@
 ################################################################################
 #
-# Copyright (C) 2022-2024 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (C) 2022-2025 Advanced Micro Devices, Inc. All rights reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -259,8 +259,8 @@ class RegressionTreeLibrary:
         self.solutionFeatures = solution_features
         self.problemFeatures = problem_features
 
-class MLPRegressionLibrary:
-    Tag = "MLPRegression"
+class MLPClassificationLibrary:
+    Tag = "MLPClassification"
     StateKeys = [("type", "tag"), "table", "mlp", "tree", "problemFeatures"]
 
     @classmethod
@@ -288,7 +288,7 @@ class MLPRegressionLibrary:
 
     def merge(self, other):
         raise RuntimeError(
-            "MLPRegressionLibrary does not support merging."
+            "MLPClassificationLibrary does not support merging."
         )
 
     def remapSolutionIndices(self, indexMap):
@@ -480,10 +480,10 @@ class MasterSolutionLibrary:
                 regressionLib = RegressionTreeLibrary.FromOriginalState(d["Library"], solutions)
                 library = PredicateLibrary(tag="Problem")
                 library.rows.append({"predicate": predicate, "library": regressionLib})
-            elif d["LibraryType"] == "MLPRegression":
+            elif d["LibraryType"] == "MLPClassification":
                 predicate = Properties.Predicate(tag="TruePred")
 
-                regressionLib = MLPRegressionLibrary.FromOriginalState(d["Library"], solutions)
+                regressionLib = MLPClassificationLibrary.FromOriginalState(d["Library"], solutions)
                 library = PredicateLibrary(tag="Problem")
                 library.rows.append({"predicate": predicate, "library": regressionLib})
             else:

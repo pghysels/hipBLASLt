@@ -1,5 +1,5 @@
 MinimumRequiredVersion: 4.33.0
-LibraryType: MLPRegression
+LibraryType: MLPClassification
 PerfMetric: ExperimentalMLP
 Fp16AltImpl: false
 ScheduleName: aquavanjaram

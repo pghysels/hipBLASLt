@@ -49,13 +49,13 @@ namespace TensileLite
     template <typename MyProblem, typename MySolution = typename MyProblem::Solution>
     struct MLPClassificationLibrary : public SolutionLibrary<MyProblem, MySolution>
     {
-        using MLP              = MLPClassification::MLP;
+        using TunaNet          = MLPClassification::TunaNet;
         using Tree             = Classification::Tree;
         using SolutionFeatures = std::vector<std::shared_ptr<MLFeatures::MLFeature<MySolution>>>;
         using ProblemFeatures  = std::vector<std::shared_ptr<MLFeatures::MLFeature<MyProblem>>>;
 
         std::map<int, std::shared_ptr<MySolution>> solutionmap;
-        std::shared_ptr<MLP>                       model;
+        std::shared_ptr<TunaNet>                   model;
         std::shared_ptr<Tree>                      tree;
         SolutionFeatures                           solFeatures;
         ProblemFeatures                            probFeatures;
@@ -71,7 +71,7 @@ namespace TensileLite
         virtual std::string description() const override
         {
             if(model == nullptr)
-                return concatenate(type(), ", MLP: nullptr");
+                return concatenate(type(), ", TunaNet: nullptr");
             else
                 return concatenate(type(), ": ", model->description());
         }
@@ -147,6 +147,8 @@ namespace TensileLite
                                                             Hardware const&  hardware,
                                                             int numSolutions) const override
         {
+            std::cout << "MLPClassificationLibrary::findTopSolution" << std::endl;
+
             // Use DecisionTreeClassifier
             // if(numSolutions == 1)
             //     return SolutionVector<MySolution>({findBestSolution(problem, hardware)});

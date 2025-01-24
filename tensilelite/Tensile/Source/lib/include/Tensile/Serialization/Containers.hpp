@@ -32,7 +32,7 @@
 #include <Tensile/ContractionProblemPredicates.hpp>
 #include <Tensile/DecisionTreeLibrary.hpp>
 #include <Tensile/RegressionTreeLibrary.hpp>
-#include <Tensile/MLPRegressionLibrary.hpp>
+#include <Tensile/MLPClassificationLibrary.hpp>
 #include <Tensile/ExactLogicLibrary.hpp>
 #include <Tensile/FreeSizeLibrary.hpp>
 #include <Tensile/GranularitySelectionLibrary.hpp>
@@ -238,7 +238,7 @@ namespace TensileLite
         {
         };
 
-        TENSILE_SERIALIZE_VECTOR(true, TensileLite::MLPRegression::ResBlock);
+        TENSILE_SERIALIZE_VECTOR(true, TensileLite::MLPClassification::ResBlock);
 
 
         template <typename T, size_t N, typename IO>
