@@ -147,8 +147,6 @@ namespace TensileLite
                                                             Hardware const&  hardware,
                                                             int numSolutions) const override
         {
-            std::cout << "MLPClassificationLibrary::findTopSolution" << std::endl;
-
             // Use DecisionTreeClassifier
             // if(numSolutions == 1)
             //     return SolutionVector<MySolution>({findBestSolution(problem, hardware)});
@@ -157,36 +155,26 @@ namespace TensileLite
                 = ProblemKey::keyForProblem<std::vector<float>, MyProblem, float>(
                     problem, this->probFeatures);
 
-            auto pred_time = model->predict(problemkey);
+            auto logits = model->predict(problemkey);
 
-            std::vector<std::pair<float, int>> solutionRank;
-            solutionRank.reserve(solutionmap.size());
-            int i = 0;
+            std::vector<std::pair<float, std::shared_ptr<MySolution>>> solution_ranking;
+            solution_ranking.reserve(solutionmap.size());
             for(auto& s : solutionmap)
             {
-                solutionRank.emplace_back(pred_time[i], i);
-                i++;
+                if((*(s.second->hardwarePredicate))(hardware)
+                    && (*(s.second->problemPredicate))(problem))
+                    solution_ranking.emplace_back(logits[s.second->libraryLogicIndex], s.second);
             }
 
-            numSolutions = std::min(numSolutions, int(solutionmap.size()));
+            numSolutions = std::min(numSolutions, int(solution_ranking.size()));
             std::partial_sort
-                (solutionRank.begin(), solutionRank.begin() + numSolutions,
-                 solutionRank.end(), std::greater{});
+                (solution_ranking.begin(), solution_ranking.begin() + numSolutions,
+                 solution_ranking.end(), std::greater{});
 
             SolutionVector<MySolution> rv;
             rv.reserve(numSolutions);
-            for(int i=0; i<numSolutions; i++)
-            {
-                // TODO fix this double loop
-                for (auto& s : solutionmap)
-                {
-                    if (s.second->libraryLogicIndex == solutionRank[i].second)
-                    {
-                        rv.push_back(s.second);
-                        break;
-                    }
-                }
-            }
+            for(auto it=solution_ranking.begin(); it!=solution_ranking.begin() + numSolutions; it++)
+                rv.emplace_back(it->second);
 
             return rv;
         }

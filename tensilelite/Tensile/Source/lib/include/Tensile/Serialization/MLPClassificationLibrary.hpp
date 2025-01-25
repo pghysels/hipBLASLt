@@ -167,8 +167,6 @@ namespace TensileLite
                     }
                 }
 
-                std::cout << "MLPClassificationLibrary::reading mlp" << std::endl;
-
                 using TunaNet = MLPClassification::TunaNet;
                 std::shared_ptr<TunaNet> model;
                 if(iot::outputting(io))
@@ -181,10 +179,6 @@ namespace TensileLite
                     lib.model = model;
                 }
                 iot::mapRequired(io, "mlp", *model);
-
-
-                std::cout << "MLPClassificationLibrary::reading mlp DONE" << std::endl;
-
 
                 // TODO probably remove the Tree from this library?
                 using Tree = Classification::Tree;

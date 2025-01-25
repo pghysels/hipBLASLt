@@ -111,8 +111,6 @@ namespace TensileLite
 
             std::vector<float> predict(std::vector<float> const& probkey) const
             {
-                std::cout << "MLP predict" << std::endl;
-
                 float M = probkey[0], N = probkey[1], /*B = probkey[2],*/ K = probkey[3];
                 float gflops = M * N * K / 1.e9, reads = (M*N + M*K + K*N) / 1.e6;
                 std::vector<float> F =
