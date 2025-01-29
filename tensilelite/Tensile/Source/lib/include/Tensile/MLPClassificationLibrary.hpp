@@ -104,12 +104,8 @@ namespace TensileLite
 
             auto winner = tree->predict(problemkey);
             for (auto& s : solutionmap)
-            {
                 if (s.second->libraryLogicIndex == winner)
-                {
                     return s.second;
-                }
-            }
             // TODO assert we don't get here
             return 0;
         }
@@ -156,15 +152,19 @@ namespace TensileLite
                     problem, this->probFeatures);
 
             auto logits = model->predict(problemkey);
+            assert(logits.size() == solutionmap.size());
 
-            std::vector<std::pair<float, std::shared_ptr<MySolution>>> solution_ranking;
+            std::vector<std::pair<decltype(logits)::value_type,
+                                  std::shared_ptr<MySolution>*>> solution_ranking;
             solution_ranking.reserve(solutionmap.size());
             for(auto& s : solutionmap)
-            {
-                if((*(s.second->hardwarePredicate))(hardware)
-                    && (*(s.second->problemPredicate))(problem))
-                    solution_ranking.emplace_back(logits[s.second->libraryLogicIndex], s.second);
-            }
+                // checking the predicates is way too slow
+                // if((*(s.second->hardwarePredicate))(hardware)
+                //     && (*(s.second->problemPredicate))(problem))
+                // solution_ranking.emplace_back(logits[s.second->libraryLogicIndex],
+                //     (std::shared_ptr<MySolution>*)(&(s.second)));
+                solution_ranking.emplace_back(logits[s.second->libraryLogicIndex],
+                    (std::shared_ptr<MySolution>*)(&s.second));
 
             numSolutions = std::min(numSolutions, int(solution_ranking.size()));
             std::partial_sort
@@ -174,7 +174,7 @@ namespace TensileLite
             SolutionVector<MySolution> rv;
             rv.reserve(numSolutions);
             for(auto it=solution_ranking.begin(); it!=solution_ranking.begin() + numSolutions; it++)
-                rv.emplace_back(it->second);
+                rv.emplace_back(*it->second);
 
             return rv;
         }

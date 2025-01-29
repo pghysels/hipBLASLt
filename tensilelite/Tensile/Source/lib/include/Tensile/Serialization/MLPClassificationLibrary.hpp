@@ -62,8 +62,11 @@ namespace TensileLite
 
             static void mapping(IO& io, Scaler& scaler)
             {
-                iot::mapRequired(io, "mean", scaler.mean);
-                iot::mapRequired(io, "scale", scaler.scale);
+                std::vector<float> mean, scale;
+                iot::mapRequired(io, "mean", mean);
+                iot::mapRequired(io, "scale", scale);
+                scaler.mean.assign(mean.begin(), mean.end());
+                scaler.scale.assign(scale.begin(), scale.end());
             }
 
             const static bool flow = false;
@@ -73,7 +76,7 @@ namespace TensileLite
         struct MappingTraits<MLPClassification::TunaNet, IO>
         {
             using TunaNet = MLPClassification::TunaNet;
-            using iot = IOTraits<IO>;
+            using iot     = IOTraits<IO>;
 
             static void mapping(IO& io, TunaNet& mlp)
             {
@@ -89,12 +92,14 @@ namespace TensileLite
         struct MappingTraits<MLPClassification::DenseLayer, IO>
         {
             using DenseLayer = MLPClassification::DenseLayer;
-            using iot = IOTraits<IO>;
+            using iot        = IOTraits<IO>;
 
             static void mapping(IO& io, DenseLayer& l)
             {
-                iot::mapRequired(io, "weight", l.weight);
-                iot::mapRequired(io, "bias", l.bias);
+                std::vector<float> W, B;
+                iot::mapRequired(io, "weight", W);
+                iot::mapRequired(io, "bias", B);
+                l = DenseLayer(W, B);
             }
 
             const static bool flow = false;
@@ -104,7 +109,7 @@ namespace TensileLite
         struct MappingTraits<MLPClassification::ResBlock, IO>
         {
             using ResBlock = MLPClassification::ResBlock;
-            using iot = IOTraits<IO>;
+            using iot      = IOTraits<IO>;
 
             static void mapping(IO& io, ResBlock& block)
             {

@@ -30,6 +30,9 @@
 #include <functional>
 #include <vector>
 #include <algorithm>
+#include <memory>
+
+#include "DataTypes_Half.hpp"
 
 namespace TensileLite
 {
@@ -49,52 +52,115 @@ namespace TensileLite
     namespace MLPClassification
     {
 
+        // using dtype = TensileLite::Half;
+        using dtype = float;
+        // using dtype = _Float16;   // very slow, -mavx512fp16
+        // using dtype = __bf16;     // compiler errors, tried with -march=native
+
         struct StandardScaler
         {
-            void operator()(std::vector<float>& F) const
+            void operator()(std::vector<dtype>& F) const
             {
                 assert(mean.size() == F.size() && scale.size() == F.size());
                 std::transform(F.begin(), F.end(), mean.begin(), F.begin(), std::minus{});
                 std::transform(F.begin(), F.end(), scale.begin(), F.begin(), std::divides{});
             }
 
-            std::vector<float> mean, scale;
+            std::vector<dtype> mean, scale;
         };
 
-        inline std::vector<float>& activation(std::vector<float>& F)
+        inline std::vector<dtype>& activation(std::vector<dtype>& F)
         {
             for (auto& f : F)    // relu
-                f = std::max(f, 0.f);
+                f = f > 0. ? f : 0.; // std::max(f, 0.f);
             return F;
         }
 
-        inline std::vector<float> activation(std::vector<float>&& F)
+        inline std::vector<dtype> activation(std::vector<dtype>&& F)
         {
             return activation(F);
         }
 
+        struct WeightMatrix
+        {
+            WeightMatrix() = default;
+            WeightMatrix(const std::vector<float>& W) : weight(W.begin(), W.end()) {}
+            virtual ~WeightMatrix() = default;
+
+            virtual void operator()(const std::vector<dtype>& F,
+                                    std::vector<dtype>& Fout) const
+            {
+                for (int i=0; i<Fout.size(); i++)
+                    Fout[i] += std::inner_product
+                        (F.begin(), F.end(), weight.begin()+i*F.size(), dtype(0.));
+            }
+
+            std::vector<dtype> weight;
+        };
+
+        /*
+         * Specifying matrix dimensions at compile time for better unrolling etc.?
+         */
+        template <int N_IN, int N_OUT>
+        struct WeightMatrixFixed : public WeightMatrix
+        {
+            WeightMatrixFixed() = default;
+            WeightMatrixFixed(const std::vector<float>& W) : WeightMatrix(W) {}
+
+            void operator()(const std::vector<dtype>& F,
+                            std::vector<dtype>& Fout) const override
+            {
+                // assert(F.size() == N_IN && Fout.size() == N_OUT);
+                // auto W = weight.data();
+                // for (int i=0; i<N_OUT; i++) {
+                //     dtype fi(0.);
+                //     for (int j=0; j<N_IN; j++)
+                //         fi += W[j] * F[j];
+                //     W += N_IN;
+                //     Fout[i] += fi;
+                // }
+                for (int i=0; i<N_OUT; i++)
+                    Fout[i] += std::inner_product
+                        (F.begin(), F.begin()+N_IN, weight.begin()+i*N_IN, dtype(0.));
+            }
+        };
+
         struct DenseLayer
         {
-            std::vector<float> operator()(const std::vector<float>& F) const
+            DenseLayer() = default;
+
+            DenseLayer(const std::vector<float>& weights, std::vector<float>& bias)
             {
-                auto Fout = bias;
-                const auto n_in = F.size(), n_out = Fout.size();
-                #pragma omp parallel for if(n_out*n_in > 32*32)
-                for (int i=0; i<n_out; i++) {
-                    float fi = 0.;
-                    for (int j=0; j<n_in; j++)
-                        fi += weight[j+i*n_in] * F[j];
-                    Fout[i] += fi;
-                }
+                int n_out = bias.size();
+                int n_in = weights.size() / n_out;
+                     if (n_in ==  16 && n_out ==  16) W = std::make_shared<WeightMatrixFixed< 16, 16>>(weights);
+                else if (n_in ==  64 && n_out == 128) W = std::make_shared<WeightMatrixFixed< 64,128>>(weights);
+                else if (n_in == 128 && n_out == 256) W = std::make_shared<WeightMatrixFixed<128,256>>(weights);
+                else if (n_in == 256 && n_out ==  64) W = std::make_shared<WeightMatrixFixed<256, 64>>(weights);
+                else if (n_in ==  64 && n_out ==  64) W = std::make_shared<WeightMatrixFixed< 64, 64>>(weights);
+                else if (n_in ==  64 && n_out ==  32) W = std::make_shared<WeightMatrixFixed< 64, 32>>(weights);
+                else                                  W = std::make_shared<WeightMatrix>(weights);
+                B.assign(bias.begin(), bias.end());
+            }
+
+            std::vector<dtype>
+            operator()(const std::vector<dtype>& F) const
+            {
+                auto Fout = B;
+                (*W)(F, Fout);
                 return Fout;
             }
 
-            std::vector<float> weight, bias;
+            std::vector<dtype> B;
+            std::shared_ptr<WeightMatrix> W;
         };
 
         struct ResBlock
         {
-            std::vector<float> operator()(const std::vector<float>& F) const
+            ResBlock() = default;
+
+            std::vector<dtype>
+            operator()(const std::vector<dtype>& F) const
             {
                 auto Fout = linear2(activation(linear1(F)));
                 auto Fres = res(F);
@@ -109,13 +175,16 @@ namespace TensileLite
         {
             TunaNet() = default;
 
-            std::vector<float> predict(std::vector<float> const& probkey) const
+            std::vector<dtype> predict(std::vector<float> const& probkey) const
             {
-                float M = probkey[0], N = probkey[1], /*B = probkey[2],*/ K = probkey[3];
-                float gflops = M * N * K / 1.e9, reads = (M*N + M*K + K*N) / 1.e6;
-                std::vector<float> F =
-                    {M, N, K, std::log(M * N),
-                     float(int(M) % 256), float(int(N) % 256), float(int(K) % 256),
+                dtype M = probkey[0], N = probkey[1], /*B = probkey[2],*/ K = probkey[3];
+                dtype gflops = M * N * K / 1.e9, reads = (M*N + M*K + K*N) / 1.e6;
+                std::vector<dtype> F =
+                    {M, N, K,
+                     dtype(std::log(M * N)),
+                     dtype(int(M) % 256),
+                     dtype(int(N) % 256),
+                     dtype(int(K) % 256),
                      gflops, reads, gflops/reads};
                 scaler(F);
                 for (auto& res : res_blocks)

@@ -171,6 +171,7 @@ namespace TensileLite
 
         // TENSILE_SERIALIZE_VECTOR(true, float);
         TENSILE_SERIALIZE_VECTOR(false, float);
+        TENSILE_SERIALIZE_VECTOR(false, TensileLite::Half);
 
         TENSILE_SERIALIZE_VECTOR(true,
                                  TensileLite::ExactLogicLibrary<TensileLite::ContractionProblemGemm,
