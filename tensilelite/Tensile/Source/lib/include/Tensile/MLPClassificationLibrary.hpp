@@ -158,24 +158,23 @@ namespace TensileLite
                                   std::shared_ptr<MySolution>*>> solution_ranking;
             solution_ranking.reserve(solutionmap.size());
             for(auto& s : solutionmap)
-                // checking the predicates is way too slow
-                // if((*(s.second->hardwarePredicate))(hardware)
-                //     && (*(s.second->problemPredicate))(problem))
-                // solution_ranking.emplace_back(logits[s.second->libraryLogicIndex],
-                //     (std::shared_ptr<MySolution>*)(&(s.second)));
                 solution_ranking.emplace_back(logits[s.second->libraryLogicIndex],
                     (std::shared_ptr<MySolution>*)(&s.second));
 
-            numSolutions = std::min(numSolutions, int(solution_ranking.size()));
-            std::partial_sort
-                (solution_ranking.begin(), solution_ranking.begin() + numSolutions,
-                 solution_ranking.end(), std::greater{});
-
             SolutionVector<MySolution> rv;
-            rv.reserve(numSolutions);
-            for(auto it=solution_ranking.begin(); it!=solution_ranking.begin() + numSolutions; it++)
-                rv.emplace_back(*it->second);
-
+            int numToSort = std::min(numSolutions, int(solution_ranking.size()));
+            rv.reserve(numToSort);
+            auto it = solution_ranking.begin(), it_end = solution_ranking.end();
+            while(it != it_end && numToSort)
+            {
+                std::partial_sort(it, it + numToSort, it_end, std::greater{});
+                for(; it != it + numToSort; it++)
+                    if((*((*it->second)->problemPredicate))(problem))
+                    {
+                        rv.emplace_back(*it->second);
+                        numToSort--;
+                    }
+            }
             return rv;
         }
 
