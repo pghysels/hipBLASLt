@@ -80,6 +80,7 @@ namespace TensileLite
 
             static void mapping(IO& io, TunaNet& mlp)
             {
+                iot::mapOptional(io, "onnx", mlp.onnx_model);
                 iot::mapRequired(io, "scaler", mlp.scaler);
                 iot::mapRequired(io, "res_blocks", mlp.res_blocks);
                 iot::mapRequired(io, "dense", mlp.dense);

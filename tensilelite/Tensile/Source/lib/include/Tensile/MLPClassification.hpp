@@ -32,6 +32,10 @@
 #include <algorithm>
 #include <memory>
 
+#if defined(TENSILE_USE_ONNX)
+#include "onnxruntime_cxx_api.h"
+#endif
+
 #include "DataTypes_Half.hpp"
 
 namespace TensileLite
@@ -177,14 +181,16 @@ namespace TensileLite
 
             std::vector<dtype> predict(std::vector<float> const& probkey) const
             {
+#if defined(TENSILE_USE_ONNX)
+                static const char* onnx_model_path = std::getenv("TENSILE_ONNX_MODEL_PATH");
+                if(!onnx_model.empty() && onnx_model_path)
+                    return predict_onnx(probkey, onnx_model_path);
+#endif
                 dtype M = probkey[0], N = probkey[1], /*B = probkey[2],*/ K = probkey[3];
                 dtype gflops = M * N * K / 1.e9, reads = (M*N + M*K + K*N) / 1.e6;
                 std::vector<dtype> F =
-                    {M, N, K,
-                     dtype(std::log(M * N)),
-                     dtype(int(M) % 256),
-                     dtype(int(N) % 256),
-                     dtype(int(K) % 256),
+                    {M, N, K, dtype(std::log(M * N)),
+                     dtype(int(M) % 256), dtype(int(N) % 256), dtype(int(K) % 256),
                      gflops, reads, gflops/reads};
                 scaler(F);
                 for (auto& res : res_blocks)
@@ -192,10 +198,47 @@ namespace TensileLite
                 return dense(F);
             }
 
+#if defined(TENSILE_USE_ONNX)
+            std::vector<dtype> predict_onnx(std::vector<float> const& probkey,
+                                            const char* onnx_model_path) const
+            {
+                std::cout << "Using ONNX model" << std::endl;
+
+                float M = probkey[0], N = probkey[1], /*B = probkey[2],*/ K = probkey[3];
+                float gflops = M * N * K / 1.e9, reads = (M*N + M*K + K*N) / 1.e6;
+                std::vector<float> F =
+                    {M, N, K, float(std::log(M * N)),
+                     float(int(M) % 256), float(int(N) % 256), float(int(K) % 256),
+                     gflops, reads, gflops/reads};
+                scaler(F);
+
+                static auto ort_env = std::make_unique<Ort::Env>();
+                static auto ort_session = std::make_unique<Ort::Session>
+                    (*ort_env, (std::string(onnx_model_path) + "/" + onnx_model).c_str(),
+                     Ort::SessionOptions{nullptr});
+                const char* in_names[] = {"Fin"};
+                const char* out_names[] = {"solution_logits"};
+                auto n_solvers = dense.B.size();
+                std::vector<float> logits(n_solvers);
+                std::array<int64_t, 2> in_shape{1, int64_t(F.size())}, out_shape{1, int64_t(n_solvers)};
+                auto mem_info = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
+                Ort::Value in_tensor = Ort::Value::CreateTensor<float>
+                    (mem_info, F.data(), F.size(), in_shape.data(), in_shape.size());
+                Ort::Value out_tensor = Ort::Value::CreateTensor<float>
+                    (mem_info, logits.data(), logits.size(), out_shape.data(), out_shape.size());
+                ort_session->Run(Ort::RunOptions{nullptr}, in_names, &in_tensor, 1, out_names, &out_tensor, 1);
+                if(std::is_same_v<dtype,float>)
+                    return logits;
+                return std::vector<dtype>(logits.begin(), logits.end());
+            }
+#endif
+
             std::string description() const
             {
                 return "TunaNet";
             }
+
+            std::string onnx_model;
 
             std::vector<ResBlock> res_blocks;
             DenseLayer dense;
