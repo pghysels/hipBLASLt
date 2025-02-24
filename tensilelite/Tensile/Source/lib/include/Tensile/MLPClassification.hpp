@@ -27,9 +27,7 @@
 #pragma once
 
 #include <array>
-#include <functional>
 #include <vector>
-#include <algorithm>
 #include <memory>
 
 #if defined(TENSILE_USE_ONNX)
@@ -63,27 +61,10 @@ namespace TensileLite
 
         struct StandardScaler
         {
-            void operator()(std::vector<dtype>& F) const
-            {
-                assert(mean.size() == F.size() && scale.size() == F.size());
-                std::transform(F.begin(), F.end(), mean.begin(), F.begin(), std::minus{});
-                std::transform(F.begin(), F.end(), scale.begin(), F.begin(), std::divides{});
-            }
+            void operator()(std::vector<dtype>& F) const;
 
             std::vector<dtype> mean, scale;
         };
-
-        inline std::vector<dtype>& activation(std::vector<dtype>& F)
-        {
-            for (auto& f : F)    // relu
-                f = f > 0. ? f : 0.; // std::max(f, 0.f);
-            return F;
-        }
-
-        inline std::vector<dtype> activation(std::vector<dtype>&& F)
-        {
-            return activation(F);
-        }
 
         struct WeightMatrix
         {
@@ -92,68 +73,28 @@ namespace TensileLite
             virtual ~WeightMatrix() = default;
 
             virtual void operator()(const std::vector<dtype>& F,
-                                    std::vector<dtype>& Fout) const
-            {
-                for (int i=0; i<Fout.size(); i++)
-                    Fout[i] += std::inner_product
-                        (F.begin(), F.end(), weight.begin()+i*F.size(), dtype(0.));
-            }
+                                    std::vector<dtype>& Fout) const;
 
             std::vector<dtype> weight;
         };
 
-        // #pragma float_control(precise, off, push)
         /*
          * Specifying matrix dimensions at compile time for better unrolling etc.?
          */
-        template <int N_IN, int N_OUT>
+        template <int N_IN>
         struct WeightMatrixFixed : public WeightMatrix
         {
             WeightMatrixFixed() = default;
             WeightMatrixFixed(const std::vector<float>& W) : WeightMatrix(W) {}
 
             void operator()(const std::vector<dtype>& F,
-                            std::vector<dtype>& Fout) const override
-            {
-                assert(F.size() == N_IN && Fout.size() == N_OUT);
-                auto W = weight.data();
-                for (int i=0; i<N_OUT; i++) {
-                    dtype fi(0.);
-                    auto Fptr = F.data();
-                    // #pragma float_control(precise, off)
-                    #pragma clang loop unroll_count(N_IN)
-                    for (int j=0; j<N_IN; j++)
-                        fi += (*W++) * (*Fptr++);
-                    Fout[i] += fi;
-                }
-                // for (int i=0; i<N_OUT; i++)
-                //     Fout[i] += std::inner_product
-                //         (F.begin(), F.begin()+N_IN, weight.begin()+i*N_IN, dtype(0.));
-            }
+                            std::vector<dtype>& Fout) const override;
         };
-        // #pragma float_control(pop)
 
         struct DenseLayer
         {
             DenseLayer() = default;
-
-            DenseLayer(const std::vector<float>& weights, std::vector<float>& bias)
-            {
-                int n_out = bias.size();
-                int n_in = weights.size() / n_out;
-                     if (n_in ==  16 && n_out ==  16) W = std::make_shared<WeightMatrixFixed< 16, 16>>(weights);
-                else if (n_in ==  32 && n_out ==  16) W = std::make_shared<WeightMatrixFixed< 32, 16>>(weights);
-                else if (n_in ==  32 && n_out ==  32) W = std::make_shared<WeightMatrixFixed< 32, 32>>(weights);
-                else if (n_in ==  32 && n_out ==  64) W = std::make_shared<WeightMatrixFixed< 32, 64>>(weights);
-                else if (n_in ==  64 && n_out ==  32) W = std::make_shared<WeightMatrixFixed< 64, 32>>(weights);
-                else if (n_in ==  64 && n_out ==  64) W = std::make_shared<WeightMatrixFixed< 64, 64>>(weights);
-                else if (n_in ==  64 && n_out == 128) W = std::make_shared<WeightMatrixFixed< 64,128>>(weights);
-                else if (n_in == 128 && n_out ==  32) W = std::make_shared<WeightMatrixFixed<128, 32>>(weights);
-                else if (n_in == 128 && n_out == 256) W = std::make_shared<WeightMatrixFixed<128,256>>(weights);
-                else if (n_in == 256 && n_out ==  64) W = std::make_shared<WeightMatrixFixed<256, 64>>(weights);
-                else                                  W = std::make_shared<WeightMatrix>(weights);
-                B.assign(bias.begin(), bias.end());
-            }
+            DenseLayer(const std::vector<float>& weights, std::vector<float>& bias);
 
             std::vector<dtype>
             operator()(const std::vector<dtype>& F) const
@@ -172,13 +113,7 @@ namespace TensileLite
             ResBlock() = default;
 
             std::vector<dtype>
-            operator()(const std::vector<dtype>& F) const
-            {
-                auto Fout = linear2(activation(linear1(F)));
-                auto Fres = res(F);
-                std::transform(Fout.begin(), Fout.end(), Fres.begin(), Fout.begin(), std::plus{});
-                return activation(Fout);
-            }
+            operator()(const std::vector<dtype>& F) const;
 
             DenseLayer linear1, linear2, res;
         };
@@ -187,24 +122,7 @@ namespace TensileLite
         {
             TunaNet() = default;
 
-            std::vector<dtype> predict(std::vector<float> const& probkey) const
-            {
-#if defined(TENSILE_USE_ONNX)
-                static const char* onnx_model_path = std::getenv("TENSILE_ONNX_MODEL_PATH");
-                if(!onnx_model.empty() && onnx_model_path)
-                    return predict_onnx(probkey, onnx_model_path);
-#endif
-                dtype M = probkey[0], N = probkey[1], /*B = probkey[2],*/ K = probkey[3];
-                dtype gflops = M * N * K / 1.e9, reads = (M*N + M*K + K*N) / 1.e6;
-                std::vector<dtype> F =
-                    {M, N, K, dtype(std::log(M * N)),
-                     dtype(int(M) % 256), dtype(int(N) % 256), dtype(int(K) % 256),
-                     gflops, reads, gflops/reads};
-                scaler(F);
-                for (auto& res : res_blocks)
-                    F = res(F);
-                return dense(F);
-            }
+            std::vector<dtype> predict(std::vector<float> const& probkey) const;
 
 #if defined(TENSILE_USE_ONNX)
             std::vector<dtype> predict_onnx(std::vector<float> const& probkey,
