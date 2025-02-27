@@ -107,10 +107,10 @@ namespace TensileLite
             if(!onnx_model.empty() && onnx_model_path)
                 return predict_onnx(probkey, onnx_model_path);
 #endif
-            dtype M = probkey[0], N = probkey[1], /*B = probkey[2],*/ K = probkey[3];
+            dtype M = probkey[0], N = probkey[1], B = probkey[2], K = probkey[3];
             dtype gflops = M * N * K / 1.e9, reads = (M*N + M*K + K*N) / 1.e6;
             std::vector<dtype> F =
-                {M, N, K, dtype(std::log(M * N)),
+                {M, N, K, B, dtype(std::log(M * N)),
                  dtype(int(M) % 256), dtype(int(N) % 256), dtype(int(K) % 256),
                  gflops, reads, gflops/reads};
             scaler(F);
