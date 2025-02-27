@@ -134,7 +134,7 @@ namespace TensileLite
                 float gflops = M * N * K / 1.e9, reads = (M*N + M*K + K*N) / 1.e6;
                 std::vector<float> F =
                     {M, N, K, B, float(std::log(M * N)),
-                     float(int(M) % 256), float(int(N) % 256), float(int(K) % 256),
+                     float(int(M) % 256), float(int(N) % 256), float(int(K) % 256), float(int(B) % 256),
                      gflops, reads, gflops/reads};
                 scaler(F);
 

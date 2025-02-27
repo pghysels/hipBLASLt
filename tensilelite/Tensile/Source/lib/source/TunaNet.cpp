@@ -111,7 +111,7 @@ namespace TensileLite
             dtype gflops = M * N * K / 1.e9, reads = (M*N + M*K + K*N) / 1.e6;
             std::vector<dtype> F =
                 {M, N, K, B, dtype(std::log(M * N)),
-                 dtype(int(M) % 256), dtype(int(N) % 256), dtype(int(K) % 256),
+                 dtype(int(M) % 256), dtype(int(N) % 256), dtype(int(K) % 256), dtype(int(B) % 256),
                  gflops, reads, gflops/reads};
             scaler(F);
             for (auto& res : res_blocks)
