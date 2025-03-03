@@ -208,11 +208,141 @@ int run_bench_test(Arguments&         arg,
     return 0;
 }
 
-int hipblaslt_bench_datafile(const std::string& filter, bool any_stride, hipDeviceProp_t& props)
+enum class GPU {
+    MI250X, MI300A, MI300X, MI325X, MI355, MI400, UNKNOWN
+};
+
+GPU get_device_type(const std::string& dev_name) {
+    if      (dev_name.find("MI250X") != std::string::npos) return GPU::MI250X;
+    else if (dev_name.find("MI300A") != std::string::npos) return GPU::MI300A;
+    else if (dev_name.find("MI300X") != std::string::npos) return GPU::MI300X;
+    else if (dev_name.find("MI325X") != std::string::npos) return GPU::MI325X;
+    else if (dev_name.find("MI355")  != std::string::npos) return GPU::MI355;
+    else if (dev_name.find("MI400")  != std::string::npos) return GPU::MI400;
+    else {
+        hipblaslt_cerr << "ERROR: iteration model does not recognize GPU model." << std::endl;
+        return GPU::UNKNOWN;
+    }
+}
+
+/*
+ * Get maximum observable peak performance in TFlop per seconds.
+ * First it checks the environment variables MAX_OBSERVABLE_TFLOPS_FP64, MAX_OBSERVABLE_TFLOPS_FP32, etc.
+ * If those are not defined, check if max_observable_tflops is defined below for the type and GPU.
+ * If that is not defined, it returns a fraction of the theoretical peak performance for the type and GPU.
+ */
+double max_observable_tflops_per_second(hipblasComputeType_t dtype, int deviceID) {
+    enum class FP { FP64, FP32, TF32, FP16, BF16, FP8, I8, UNKNOWN };
+    FP fp = FP::UNKNOWN;
+    switch (dtype) {
+        case HIPBLAS_COMPUTE_64F: case HIPBLAS_COMPUTE_64F_PEDANTIC:  fp = FP::FP64; break;
+        case HIPBLAS_COMPUTE_32F: case HIPBLAS_COMPUTE_32F_PEDANTIC:  fp = FP::FP32; break;
+        case HIPBLAS_COMPUTE_32F_FAST_TF32:                           fp = FP::TF32; break;
+        case HIPBLAS_COMPUTE_16F: case HIPBLAS_COMPUTE_16F_PEDANTIC:
+        case HIPBLAS_COMPUTE_32F_FAST_16F:                            fp = FP::FP16; break;
+        case HIPBLAS_COMPUTE_32F_FAST_16BF:                           fp = FP::BF16; break;
+        // TODO what is the hipblasComputeType_t for I8 ?
+        case HIPBLAS_COMPUTE_32I: case HIPBLAS_COMPUTE_32I_PEDANTIC:
+        default:
+            hipblaslt_cerr << "ERROR: iteration model does not recognize compute type." << std::endl;
+    }
+
+    static const char* env_max_tflops_fp64 = std::getenv("MAX_OBSERVABLE_TFLOPS_FP64");
+    static const char* env_max_tflops_fp32 = std::getenv("MAX_OBSERVABLE_TFLOPS_FP32");
+    static const char* env_max_tflops_tf32 = std::getenv("MAX_OBSERVABLE_TFLOPS_TF32");
+    static const char* env_max_tflops_fp16 = std::getenv("MAX_OBSERVABLE_TFLOPS_FP16");
+    static const char* env_max_tflops_bf16 = std::getenv("MAX_OBSERVABLE_TFLOPS_BF16");
+    static const char* env_max_tflops_fp8  = std::getenv("MAX_OBSERVABLE_TFLOPS_FP8");
+    if (fp == FP::FP64 && env_max_tflops_fp64) return std::stod(env_max_tflops_fp64);
+    if (fp == FP::FP32 && env_max_tflops_fp32) return std::stod(env_max_tflops_fp32);
+    if (fp == FP::TF32 && env_max_tflops_tf32) return std::stod(env_max_tflops_tf32);
+    if (fp == FP::FP16 && env_max_tflops_fp16) return std::stod(env_max_tflops_fp16);
+    if (fp == FP::BF16 && env_max_tflops_bf16) return std::stod(env_max_tflops_bf16);
+    if (fp == FP::FP8  && env_max_tflops_fp8)  return std::stod(env_max_tflops_fp8);
+
+    // if available, use the max observable peak performance instead of the theoretical peak, see
+    // https://rocm.blogs.amd.com/software-tools-optimization/measuring-max-achievable-flops-part2/README.html
+    const std::map<GPU, const std::map<FP, double>> max_observable_tflops = {
+        {GPU::MI300X, {{FP::FP16, 654}, {FP::BF16, 708}, {FP::FP8, 1273}}},
+        {GPU::MI325X, {{FP::FP16, 794}, {FP::BF16, 843}, {FP::FP8, 1519}}}
+    };
+    hipDeviceProp_t props;
+    hipGetDeviceProperties(&props, deviceID);
+    auto gpu = get_device_type(props.name);
+    if (max_observable_tflops.count(gpu) && max_observable_tflops.at(gpu).count(fp))
+        return max_observable_tflops.at(gpu).at(fp);
+
+    // https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/white-papers/amd-cdna-3-white-paper.pdf
+    const std::map<GPU, const std::map<FP, double>> theoretical_peak_tflops = {
+        {GPU::MI250X, {{FP::FP64,  95.7}, {FP::FP32,  95.7}, {FP::TF32,   0.0}, {FP::FP16,  383.0}, {FP::BF16,  383.0}, {FP::FP8,    0.0}, {FP::I8,  383.0}}},
+        {GPU::MI300A, {{FP::FP64, 122.6}, {FP::FP32, 122.6}, {FP::TF32, 490.3}, {FP::FP16,  980.6}, {FP::BF16,  980.6}, {FP::FP8, 1961.2}, {FP::I8, 1961.2}}},
+        {GPU::MI300X, {{FP::FP64, 163.4}, {FP::FP32, 163.4}, {FP::TF32, 490.3}, {FP::FP16, 1307.4}, {FP::BF16, 1307.4}, {FP::FP8, 2614.9}, {FP::I8, 2614.9}}},
+        {GPU::MI325X, {{FP::FP64, 163.4}, {FP::FP32, 163.4}, {FP::TF32, 653.7}, {FP::FP16, 1307.4}, {FP::BF16, 1307.4}, {FP::FP8, 2614.9}, {FP::I8, 2614.9}}}
+    };
+    if (theoretical_peak_tflops.count(gpu) && theoretical_peak_tflops.at(gpu).count(fp)) {
+        // Using theoretical_peak_tflops will significantly overestimate the performance.
+        // GEMMs on recent hardware typically achieve no more than 70% of peak, see
+        // https://rocm.blogs.amd.com/software-tools-optimization/Understanding_Peak_and_Max-Achievable_FLOPS/README.html
+        return 0.7 * theoretical_peak_tflops.at(gpu).at(fp);
+    }
+    hipblaslt_cerr << "Iteration model does not have max observable TFlop/s info for this device and/or compute type." << std::endl;
+    return 0.;
+}
+
+double max_observable_tbyte_per_second(int deviceID) {
+    static const char* env_max_bw = std::getenv("MAX_OBSERVABLE_BANDWIDTH");
+    if (env_max_bw) return std::stod(env_max_bw);
+    hipDeviceProp_t props;
+    hipGetDeviceProperties(&props, deviceID);
+    auto gpu = get_device_type(props.name);
+
+    // https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/white-papers/amd-cdna-3-white-paper.pdf
+    const std::map<GPU, double> theoretical_peak_bw = {
+        {GPU::MI250X, 3.2}, {GPU::MI300A, 5.3}, {GPU::MI300X, 5.3}, {GPU::MI325X, 6.0}
+    };
+    if (theoretical_peak_bw.count(gpu)) {
+        // TODO keep table with max observable peak bandwidth?
+        // TODO what fraction is good here?
+        return .5 * theoretical_peak_bw.at(gpu);
+    }
+    hipblaslt_cerr << "Iteration model does not have max observable bandwidth info for this device." << std::endl;
+    return 0.;
+}
+
+double minimum_estimated_runtime(int64_t M, int64_t N, int64_t K, int64_t B, hipblasComputeType_t dtype, int deviceID) {
+    // t_setup should be a lower bound for the minimum time of a gemm kernel,
+    // which is mostly determined by the kernel launch latency
+    double t_setup = 5.e-6;  // 5 microseconds
+    auto peak_tflops = max_observable_tflops_per_second(dtype, deviceID);
+    auto peak_bw = max_observable_tbyte_per_second(deviceID);
+    double tflop_count = 2.0 * B * M * N * K / 1.e12;
+    // TODO what about data transfer for D?
+    double mem_transfers = B * realDataTypeSize(computeTypeToRealDataType(dtype)) * (M * N + N * K + K * M) / 1.e12;
+    // TODO divide by zero if GPU not recognized?
+    return t_setup + std::max(tflop_count / peak_tflops, mem_transfers / peak_bw);
+}
+
+std::pair<int32_t, int32_t> minimum_iters_cold_hot(int64_t M, int64_t N, int64_t K, int64_t B, hipblasComputeType_t dtype, int deviceID) {
+    // run for 0.02 seconds cold, 0.1 seconds hot, or 20 milliseconds cold, 100 milliseconds hot
+    auto t = minimum_estimated_runtime(M, N, K, B, dtype, deviceID);
+    // TODO what if GPU not recognized?
+    return {std::max( 2, int32_t(0.02 / t)),   // cold, at least 2
+            std::max(10, int32_t(0.1  / t))};  // hot, at least 10
+}
+
+int hipblaslt_bench_datafile(const std::string& filter, bool any_stride, hipDeviceProp_t& props, int deviceID)
 {
     int ret = 0;
     for(Arguments arg : HipBlasLt_TestData())
+    {
+        auto cold_hot_iters = minimum_iters_cold_hot
+            (arg.M[0], arg.N[0], arg.K[0], arg.batch_count, arg.compute_type, deviceID);
+        arg.cold_iters = std::get<0>(cold_hot_iters);
+        arg.iters = std::get<1>(cold_hot_iters);
+        hipblaslt_cout << "cold_iters: " << arg.cold_iters
+                       << " hot_iters: " << arg.iters << std::endl;
         ret |= run_bench_test(arg, filter, any_stride, props, true);
+    }
     test_cleanup::cleanup();
     return ret;
 }
@@ -799,7 +929,7 @@ try
     freq_monitor.set_device_id(device_id);
 
     if(datafile)
-        return hipblaslt_bench_datafile(filter, any_stride, props);
+        return hipblaslt_bench_datafile(filter, any_stride, props, device_id);
 
     // single bench run
 
@@ -922,6 +1052,14 @@ try
         arg.norm_check     = 1;
         arg.allclose_check = 1;
     }
+
+    // TODO add option to enable this
+    auto cold_hot_iters = minimum_iters_cold_hot
+        (arg.M[0], arg.N[0], arg.K[0], arg.batch_count, arg.compute_type, device_id);
+    arg.cold_iters = std::get<0>(cold_hot_iters);
+    arg.iters = std::get<1>(cold_hot_iters);
+    hipblaslt_cout << "cold iters: " << arg.cold_iters << std::endl;
+    hipblaslt_cout << "     iters: " << arg.iters << std::endl;
 
     switch(api_method)
     {
