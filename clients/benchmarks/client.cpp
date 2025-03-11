@@ -212,11 +212,14 @@ namespace iteration_model
 {
 
     enum class GPU {
-        MI250X, MI300A, MI300X, MI325X, MI355, MI400, UNKNOWN
+        MI60, MI100, MI210, MI250X, MI300A, MI300X, MI325X, MI355, MI400, UNKNOWN
     };
 
     GPU get_device_type(const std::string& dev_name) {
-        if      (dev_name.find("MI250X") != std::string::npos) return GPU::MI250X;
+        if      (dev_name.find("MI60")   != std::string::npos) return GPU::MI60;
+        else if (dev_name.find("MI100")  != std::string::npos) return GPU::MI100;
+        else if (dev_name.find("MI210")  != std::string::npos) return GPU::MI210;
+        else if (dev_name.find("MI250X") != std::string::npos) return GPU::MI250X;
         else if (dev_name.find("MI300A") != std::string::npos) return GPU::MI300A;
         else if (dev_name.find("MI300X") != std::string::npos) return GPU::MI300X;
         else if (dev_name.find("MI325X") != std::string::npos) return GPU::MI325X;
@@ -229,12 +232,12 @@ namespace iteration_model
     }
 
     /*
-     * Get maximum observable peak performance in TFlop per seconds.
-     * First it checks the environment variables MAX_OBSERVABLE_TFLOPS_FP64, MAX_OBSERVABLE_TFLOPS_FP32, etc.
-     * If those are not defined, check if max_observable_tflops is defined below for the type and GPU.
+     * Get maximum achievable peak performance in TFlop per seconds.
+     * First it checks the environment variables MAX_ACHIEVABLE_TFLOPS_FP64, MAX_ACHIEVABLE_TFLOPS_FP32, etc.
+     * If those are not defined, check if max_achievable_tflops is defined below for the type and GPU.
      * If that is not defined, it returns a fraction of the theoretical peak performance for the type and GPU.
      */
-    double max_observable_tflops_per_second(hipDataType a_type,
+    double max_achievable_tflops_per_second(hipDataType a_type,
                                             hipblasComputeType_t compute_type, GPU gpu) {
         // TODO how does the actual compute type depend on:
         //   a_type, b_type, compute_input_typeA, compute_input_typeB, compute_type ??
@@ -263,13 +266,13 @@ namespace iteration_model
             default: break;
         }
 
-        static const char* env_max_tflops_fp64 = std::getenv("MAX_OBSERVABLE_TFLOPS_FP64");
-        static const char* env_max_tflops_fp32 = std::getenv("MAX_OBSERVABLE_TFLOPS_FP32");
-        static const char* env_max_tflops_tf32 = std::getenv("MAX_OBSERVABLE_TFLOPS_TF32");
-        static const char* env_max_tflops_fp16 = std::getenv("MAX_OBSERVABLE_TFLOPS_FP16");
-        static const char* env_max_tflops_bf16 = std::getenv("MAX_OBSERVABLE_TFLOPS_BF16");
-        static const char* env_max_tflops_fp8  = std::getenv("MAX_OBSERVABLE_TFLOPS_FP8");
-        static const char* env_max_tflops_bf8  = std::getenv("MAX_OBSERVABLE_TFLOPS_BF8");
+        static const char* env_max_tflops_fp64 = std::getenv("MAX_ACHIEVABLE_TFLOPS_FP64");
+        static const char* env_max_tflops_fp32 = std::getenv("MAX_ACHIEVABLE_TFLOPS_FP32");
+        static const char* env_max_tflops_tf32 = std::getenv("MAX_ACHIEVABLE_TFLOPS_TF32");
+        static const char* env_max_tflops_fp16 = std::getenv("MAX_ACHIEVABLE_TFLOPS_FP16");
+        static const char* env_max_tflops_bf16 = std::getenv("MAX_ACHIEVABLE_TFLOPS_BF16");
+        static const char* env_max_tflops_fp8  = std::getenv("MAX_ACHIEVABLE_TFLOPS_FP8");
+        static const char* env_max_tflops_bf8  = std::getenv("MAX_ACHIEVABLE_TFLOPS_BF8");
         if (fp == FP::FP64 && env_max_tflops_fp64) return std::stod(env_max_tflops_fp64);
         if (fp == FP::FP32 && env_max_tflops_fp32) return std::stod(env_max_tflops_fp32);
         if (fp == FP::TF32 && env_max_tflops_tf32) return std::stod(env_max_tflops_tf32);
@@ -278,21 +281,26 @@ namespace iteration_model
         if (fp == FP::FP8  && env_max_tflops_fp8)  return std::stod(env_max_tflops_fp8);
         if (fp == FP::BF8  && env_max_tflops_bf8)  return std::stod(env_max_tflops_bf8);
 
-        // if available, use the max observable peak performance instead of the theoretical peak, see
+        // if available, use the max achievable peak performance instead of the theoretical peak, see
         // https://rocm.blogs.amd.com/software-tools-optimization/measuring-max-achievable-flops-part2/README.html
-        const std::map<GPU, const std::map<FP, double>> max_observable_tflops = {
+        const std::map<GPU, const std::map<FP, double>> max_achievable_tflops = {
             {GPU::MI300X, {{FP::FP16, 654}, {FP::BF16, 708}, {FP::FP8, 1273}}},
             {GPU::MI325X, {{FP::FP16, 794}, {FP::BF16, 843}, {FP::FP8, 1519}}}
+            // do not put classified data here! use environment variables instead.
         };
-        if (max_observable_tflops.count(gpu) && max_observable_tflops.at(gpu).count(fp))
-            return max_observable_tflops.at(gpu).at(fp);
+        if (max_achievable_tflops.count(gpu) && max_achievable_tflops.at(gpu).count(fp))
+            return max_achievable_tflops.at(gpu).at(fp);
 
         // https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/white-papers/amd-cdna-3-white-paper.pdf
         const std::map<GPU, const std::map<FP, double>> theoretical_peak_tflops = {
-            {GPU::MI250X, {{FP::FP64,  95.7}, {FP::FP32,  95.7}, {FP::TF32,   0.0}, {FP::FP16,  383.0}, {FP::BF16,  383.0}, {FP::FP8,    0.0}, {FP::BF8,    0.0}, {FP::I8,  383.0}}},
+            {GPU::MI60,   {{FP::FP64,   7.4}, {FP::FP32,  14.7},                    {FP::FP16,   29.5},                                                           {FP::I8,   59.0}}},
+            {GPU::MI100,  {{FP::FP64,  11.5}, {FP::FP32,  23.1},                    {FP::FP16,  184.6}, {FP::BF16,   92.3},                                       {FP::I8,   92.3}}},
+            {GPU::MI210,  {{FP::FP64,  45.3}, {FP::FP32,  45.3},                    {FP::FP16,  181.0}, {FP::BF16,  181.0},                                       {FP::I8,  181.0}}},
+            {GPU::MI250X, {{FP::FP64,  95.7}, {FP::FP32,  95.7},                    {FP::FP16,  383.0}, {FP::BF16,  383.0},                                       {FP::I8,  383.0}}},
             {GPU::MI300A, {{FP::FP64, 122.6}, {FP::FP32, 122.6}, {FP::TF32, 490.3}, {FP::FP16,  980.6}, {FP::BF16,  980.6}, {FP::FP8, 1961.2}, {FP::BF8, 1961.2}, {FP::I8, 1961.2}}},
             {GPU::MI300X, {{FP::FP64, 163.4}, {FP::FP32, 163.4}, {FP::TF32, 490.3}, {FP::FP16, 1307.4}, {FP::BF16, 1307.4}, {FP::FP8, 2614.9}, {FP::BF8, 2614.9}, {FP::I8, 2614.9}}},
             {GPU::MI325X, {{FP::FP64, 163.4}, {FP::FP32, 163.4}, {FP::TF32, 653.7}, {FP::FP16, 1307.4}, {FP::BF16, 1307.4}, {FP::FP8, 2614.9}, {FP::BF8, 2614.9}, {FP::I8, 2614.9}}}
+            // do not put classified data here! use environment variables instead.
         };
         if (theoretical_peak_tflops.count(gpu) && theoretical_peak_tflops.at(gpu).count(fp)) {
             // Using theoretical_peak_tflops will significantly overestimate the performance.
@@ -300,46 +308,65 @@ namespace iteration_model
             // https://rocm.blogs.amd.com/software-tools-optimization/Understanding_Peak_and_Max-Achievable_FLOPS/README.html
             return 0.7 * theoretical_peak_tflops.at(gpu).at(fp);
         }
-        hipblaslt_cerr << "Iteration model does not have max observable TFlop/s info for this device and/or compute type." << std::endl;
+        hipblaslt_cerr << "Iteration model does not have max achievable TFlop/s info for this device and/or compute type." << std::endl;
         return 0.;
     }
 
-    double max_observable_tbyte_per_second(GPU gpu) {
+    double max_achievable_tbyte_per_second(GPU gpu) {
         static const char* env_max_bw = std::getenv("MAX_OBSERVABLE_BANDWIDTH");
         if (env_max_bw) return std::stod(env_max_bw);
-        // TODO keep table with max observable peak bandwidth?
+        // TODO keep table with max achievable peak bandwidth?
         // measured using the stream benchmark:
         //  https://www.amd.com/en/developer/zen-software-studio/applications/spack/stream-benchmark.html
         // or from BW limited GEMM benchmarks
 
         // https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/white-papers/amd-cdna-3-white-paper.pdf
         const std::map<GPU, double> theoretical_peak_bw = {
-            {GPU::MI250X, 3.2}, {GPU::MI300A, 5.3}, {GPU::MI300X, 5.3}, {GPU::MI325X, 6.0}
+            {GPU::MI60,   1.0},
+            {GPU::MI100,  1.2},
+            {GPU::MI210,  1.6},
+            {GPU::MI250X, 3.2},
+            {GPU::MI300A, 5.3},
+            {GPU::MI300X, 5.3},
+            {GPU::MI325X, 6.0}
+            // do not put classified data here! use environment variables instead.
         };
         if (theoretical_peak_bw.count(gpu)) {
-            // TODO what fraction is good here?
-            return .5 * theoretical_peak_bw.at(gpu);
+            // max achievable is typically no more than 82% of theoretical peak
+            return .82 * theoretical_peak_bw.at(gpu);
         }
-        hipblaslt_cerr << "Iteration model does not have max observable bandwidth info for this device." << std::endl;
+        hipblaslt_cerr << "Iteration model does not have max achievable bandwidth info for this device." << std::endl;
         return 0.;
+    }
+
+    double smooth_max(double a, double b, double alpha = .5) {
+        static const char* env_alpha = std::getenv("SMOOTH_MAX_ALPHA");
+        if (env_alpha) alpha = std::stod(env_alpha);
+        // larger alpha smooths more, but then could underestimate required number of iterations
+        // first take log to prevent overflow (needed when working in flop iso TFlop?)
+        return std::exp(alpha * std::log(std::exp(std::log(a)/alpha) + std::exp(std::log(b)/alpha)));
+        // return alpha * std::log(std::exp(a/alpha) + std::exp(b/alpha));
     }
 
     std::pair<int32_t, int32_t> minimum_iters_cold_hot(const Arguments& arg, hipDeviceProp_t& props,
                                                        float runtime_cold, float runtime_hot) {
         // t_setup should be a lower bound for the minimum time of a gemm kernel,
         // which is mostly determined by the kernel launch latency
-        double t_setup = 8.e-6;  // 8 microseconds
+        double t_setup = 5.e-6;  // 5 microseconds
         auto gpu = get_device_type(props.name);
-        if (gpu == GPU::UNKNOWN) return {2, 10};
-        auto peak_tflops = max_observable_tflops_per_second(arg.a_type, arg.compute_type, gpu);
-        auto peak_bw = max_observable_tbyte_per_second(gpu);
+        if (gpu == GPU::UNKNOWN) return {10, 9999};
+        auto peak_tflops = max_achievable_tflops_per_second(arg.a_type, arg.compute_type, gpu);
+        auto peak_bw = max_achievable_tbyte_per_second(gpu);
         int64_t M = arg.M[0], N = arg.N[0], K = arg.K[0], B = arg.batch_count;
         double tflop_count = 2.0 * B * M * N * K / 1.e12;
-        double mem_transfers = B * (realDataTypeSize(arg.a_type) * M * K +                          // reading A
-                                    realDataTypeSize(arg.b_type) * N * K +                          // reading B
-                                    (arg.beta == 0. ? 0. : realDataTypeSize(arg.c_type) * M * N) +  // reading C
-                                    realDataTypeSize(arg.d_type) * M * N) / 1.e12;                  // writing C/D
-        auto t = t_setup + std::max(tflop_count / peak_tflops, mem_transfers / peak_bw);
+        double mem_transfers = B *                                           // batch_count
+            (realDataTypeSize(arg.a_type) * M * K +                          // reading A
+             realDataTypeSize(arg.b_type) * N * K +                          // reading B
+             (arg.beta == 0. ? 0. : realDataTypeSize(arg.c_type) * M * N) +  // reading C
+             realDataTypeSize(arg.d_type) * M * N)                           // writing C/D
+             / 1.e12;                                                        // to TB
+        // auto t = t_setup + std::max(tflop_count / peak_tflops, mem_transfers / peak_bw);
+        auto t = t_setup + smooth_max(tflop_count / peak_tflops, mem_transfers / peak_bw);
         return {std::max( 2, int32_t(runtime_cold / t)),   // cold, at least 2
                 std::max(10, int32_t(runtime_hot  / t))};  // hot, at least 10
     }
