@@ -27,6 +27,8 @@
 #include <algorithm>
 #include <numeric>
 #include <cassert>
+#include <stdexcept>
+#include <iostream>
 
 #include <Tensile/MLPClassification.hpp>
 
@@ -40,6 +42,53 @@ namespace TensileLite
             std::transform(F.begin(), F.end(), mean.begin(), F.begin(), std::minus{});
             std::transform(F.begin(), F.end(), scale.begin(), F.begin(), std::divides{});
         }
+
+        bool StandardScaler::valid(bool verbose) const
+        {
+            bool is_valid = true;
+            if(mean.size() != scale.size())
+            {
+                if(verbose)
+                {
+                    std::cerr << "StandardScaler mean and scale do not match." << std::endl;
+                }
+                is_valid = false;
+            }
+            if(std::find(scale.begin(), scale.end(), 0.) != scale.end())
+            {
+                if(verbose)
+                {
+                    std::cerr << "StandardScaler scale contains zero." << std::endl;
+                }
+                is_valid = false;
+            }
+            return is_valid;
+        }
+
+        struct WeightMatrix
+        {
+            WeightMatrix() = default;
+            WeightMatrix(const std::vector<float>& W) : weight(W.begin(), W.end()) {}
+            virtual ~WeightMatrix() = default;
+
+            virtual void operator()(const std::vector<dtype>& F,
+                                    std::vector<dtype>& Fout) const;
+
+            std::vector<dtype> weight;
+        };
+
+        /*
+         * Specifying matrix dimensions at compile time for better unrolling etc.?
+         */
+        template <int N_IN>
+        struct WeightMatrixFixed : public WeightMatrix
+        {
+            WeightMatrixFixed() = default;
+            WeightMatrixFixed(const std::vector<float>& W) : WeightMatrix(W) {}
+
+            void operator()(const std::vector<dtype>& F,
+                            std::vector<dtype>& Fout) const override;
+        };
 
         void WeightMatrix::operator()(const std::vector<dtype>& F,
                                       std::vector<dtype>& Fout) const
@@ -65,10 +114,13 @@ namespace TensileLite
             }
         }
 
-        DenseLayer::DenseLayer(const std::vector<float>& weights, std::vector<float>& bias)
+        DenseLayer::DenseLayer(const std::vector<float>& weights, const std::vector<float>& bias)
         {
-            int n_in = weights.size() / bias.size();
-            switch (n_in) {
+            size_out = bias.size();
+            size_in = weights.size() / size_out;
+            if(size_in * size_out != weights.size())
+                throw std::runtime_error("Error: weights and bias dimensions do not match.");
+            switch (size_in) {
                 case  10: W = std::make_shared<WeightMatrixFixed< 10>>(weights); break;
                 case  16: W = std::make_shared<WeightMatrixFixed< 16>>(weights); break;
                 case  32: W = std::make_shared<WeightMatrixFixed< 32>>(weights); break;
@@ -78,6 +130,26 @@ namespace TensileLite
                 default:  W = std::make_shared<WeightMatrix>(weights);
             }
             B.assign(bias.begin(), bias.end());
+        }
+
+        std::vector<dtype> DenseLayer::operator()(const std::vector<dtype>& F) const
+        {
+            auto Fout = B;
+            (*W)(F, Fout);
+            return Fout;
+        }
+
+        bool DenseLayer::valid(bool verbose) const
+        {
+            if(B.size() != size_out || W->weight.size() != size_in * size_out)
+            {
+                if(verbose)
+                {
+                    std::cerr << "Bias and weight dimensions do not match." << std::endl;
+                }
+                return false;
+            }
+            return true;
         }
 
         std::vector<dtype>& activation(std::vector<dtype>& F)
@@ -100,6 +172,28 @@ namespace TensileLite
             return activation(Fout);
         }
 
+        bool ResBlock::valid(bool verbose) const
+        {
+            bool is_valid = linear1.valid(verbose) && linear2.valid(verbose) && res.valid(verbose);
+            if(linear1.size_out != linear2.size_in)
+            {
+                if(verbose)
+                {
+                    std::cerr << "Linear layer 2 does not match output of linear layer 1." << std::endl;
+                }
+                is_valid = false;
+            }
+            if(linear1.size_in != res.size_in || linear2.size_out != res.size_out)
+            {
+                if(verbose)
+                {
+                    std::cerr << "Residual connection layer size does not match other linear layers." << std::endl;
+                }
+                is_valid = false;
+            }
+            return is_valid;
+        }
+
         std::vector<dtype> TunaNet::predict(std::vector<float> const& probkey) const
         {
 #if defined(TENSILE_USE_ONNX)
@@ -117,6 +211,30 @@ namespace TensileLite
             for (auto& res : res_blocks)
                 F = res(F);
             return dense(F);
+        }
+
+        bool TunaNet::valid(bool verbose) const
+        {
+            bool is_valid = scaler.valid(verbose) && dense.valid(verbose) &&
+                std::all_of(res_blocks.cbegin(), res_blocks.cend(),
+                            [&verbose](const ResBlock& r) { return r.valid(verbose); });
+            if(!(res_blocks.empty() || dense.size_in == res_blocks.back().res.size_out))
+            {
+                if(verbose)
+                {
+                    std::cerr << "TunaNet dense layer input size not correct." << std::endl;
+                }
+                is_valid = false;
+            }
+            if(scaler.mean.size() != (res_blocks.empty() ? dense.size_in : res_blocks[0].linear1.size_in))
+            {
+                if(verbose)
+                {
+                    std::cerr << "StandardScaler size does not match TunaNet network input size." << std::endl;
+                }
+                is_valid = false;
+            }
+            return is_valid;
         }
 
     }

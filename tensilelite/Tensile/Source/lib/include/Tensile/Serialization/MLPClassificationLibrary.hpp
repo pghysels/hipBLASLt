@@ -185,6 +185,7 @@ namespace TensileLite
                     lib.model = model;
                 }
                 iot::mapRequired(io, "mlp", *model);
+                model->valid(true);
 
                 // TODO probably remove the Tree from this library?
                 using Tree = Classification::Tree;

@@ -34,7 +34,7 @@
 #include "onnxruntime_cxx_api.h"
 #endif
 
-#include "DataTypes_Half.hpp"
+// #include "DataTypes_Half.hpp"
 
 namespace TensileLite
 {
@@ -46,6 +46,8 @@ namespace TensileLite
      *
      * Neural net used to estimate efficiency values for solutions in the
      * library. Used for MLPClassificationLibrary.
+     *
+     * See TunaNet.cpp
      */
 
     /**
@@ -62,47 +64,26 @@ namespace TensileLite
         struct StandardScaler
         {
             void operator()(std::vector<dtype>& F) const;
+            bool valid(bool verbose = false) const;
 
             std::vector<dtype> mean, scale;
         };
 
-        struct WeightMatrix
-        {
-            WeightMatrix() = default;
-            WeightMatrix(const std::vector<float>& W) : weight(W.begin(), W.end()) {}
-            virtual ~WeightMatrix() = default;
-
-            virtual void operator()(const std::vector<dtype>& F,
-                                    std::vector<dtype>& Fout) const;
-
-            std::vector<dtype> weight;
-        };
-
-        /*
-         * Specifying matrix dimensions at compile time for better unrolling etc.?
-         */
-        template <int N_IN>
-        struct WeightMatrixFixed : public WeightMatrix
-        {
-            WeightMatrixFixed() = default;
-            WeightMatrixFixed(const std::vector<float>& W) : WeightMatrix(W) {}
-
-            void operator()(const std::vector<dtype>& F,
-                            std::vector<dtype>& Fout) const override;
-        };
+        // forward declaration
+        struct WeightMatrix;
 
         struct DenseLayer
         {
             DenseLayer() = default;
-            DenseLayer(const std::vector<float>& weights, std::vector<float>& bias);
+            DenseLayer(const std::vector<float>& weights, const std::vector<float>& bias);
 
             std::vector<dtype>
-            operator()(const std::vector<dtype>& F) const
-            {
-                auto Fout = B;
-                (*W)(F, Fout);
-                return Fout;
-            }
+            operator()(const std::vector<dtype>& F) const;
+
+            bool valid(bool verbose = false) const;
+
+            std::size_t size_in;
+            std::size_t size_out;
 
             std::vector<dtype> B;
             std::shared_ptr<WeightMatrix> W;
@@ -114,6 +95,8 @@ namespace TensileLite
 
             std::vector<dtype>
             operator()(const std::vector<dtype>& F) const;
+
+            bool valid(bool verbose = false) const;
 
             DenseLayer linear1, linear2, res;
         };
@@ -128,8 +111,6 @@ namespace TensileLite
             std::vector<dtype> predict_onnx(std::vector<float> const& probkey,
                                             const char* onnx_model_path) const
             {
-                std::cout << "Using ONNX model" << std::endl;
-
                 float M = probkey[0], N = probkey[1], B = probkey[2], K = probkey[3];
                 float gflops = M * N * K / 1.e9, reads = (M*N + M*K + K*N) / 1.e6;
                 std::vector<float> F =
@@ -158,6 +139,8 @@ namespace TensileLite
                 return std::vector<dtype>(logits.begin(), logits.end());
             }
 #endif
+
+            bool valid(bool verbose = false) const;
 
             std::string description() const
             {
