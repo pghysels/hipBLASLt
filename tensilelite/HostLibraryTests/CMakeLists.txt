@@ -64,20 +64,14 @@ endif()
 
 if(NOT TENSILE_DISABLE_CTEST)
     enable_testing()
-
-    if(CMAKE_VERSION VERSION_GREATER 3.9)
-        include(GoogleTest)
+    find_package( GTest )
+    if(GTest_FOUND)
         option(GTEST_INTEGRATION "Enable Googletest integration with CMake." ON)
     else()
         option(GTEST_INTEGRATION "Enable Googletest integration with CMake." OFF)
     endif()
 endif()
 
-set(INSTALL_GTEST OFF CACHE BOOL "Install GTest")
-add_subdirectory(googletest)
-if(NOT gtest_SOURCE_DIR)
-    message(FATAL_ERROR "googletest not found.  Run git submodule update --init")
-endif()
 
 find_package(Boost COMPONENTS filesystem)
 
@@ -117,7 +111,6 @@ foreach(FILE ${SOLUTION_LIBRARY_FILES})
     file(COPY ${FILE} DESTINATION "${TEST_DATA_DIR}")
 endforeach(FILE)
 
-include_directories("." ${GTEST_SOURCE_DIR}/include)
 add_subdirectory(testlib)
 
 set(test_sources ${test_sources}
@@ -149,7 +142,11 @@ if(NOT TENSILE_DISABLE_CTEST)
     endif()
 endif()
 
-target_link_libraries(TensileTests PUBLIC gtest TensileHost TensileTestLib ${Boost_LIBRARIES})
+target_link_libraries(TensileTests PUBLIC TensileHost TensileTestLib ${Boost_LIBRARIES})
+
+if(GTEST_INTEGRATION)
+    target_link_libraries(TensileTests PUBLIC GTest::gtest)
+endif()
 
 if(TENSILE_USE_LLVM)
     find_library(LLVMObjectYAML_LIBRARY
