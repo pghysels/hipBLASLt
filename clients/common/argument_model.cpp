@@ -2,7 +2,7 @@
  *
  * MIT License
  *
- * Copyright (C) 2022 Advanced Micro Devices, Inc.
+ * Copyright (C) 2022-2025 Advanced Micro Devices, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -38,7 +38,10 @@ auto hipblaslt_get_flops_per_clock_per_cu_gfx942(hipDataType          inputType,
     else if(inputType == HIP_R_16F || inputType == HIP_R_16BF)
         return 2048;
     else if(inputType == HIP_R_8F_E4M3_FNUZ || inputType == HIP_R_8F_E5M2_FNUZ
-            || inputType == HIP_R_8F_E4M3 || inputType == HIP_R_8F_E5M2 || inputType == HIP_R_8I)
+#ifdef ROCM_USE_FLOAT8
+            || inputType == HIP_R_8F_E4M3 || inputType == HIP_R_8F_E5M2
+#endif
+	    || inputType == HIP_R_8I)
         return 4096;
     else
         return 0;

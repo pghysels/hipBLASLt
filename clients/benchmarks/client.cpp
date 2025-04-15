@@ -936,16 +936,20 @@ try
     // Block scaling only allows F8/F6/F4
     if(arg.scaleA == hipblaslt_scaling_format::Block)
     {
-        if(arg.a_type != HIP_R_8F_E4M3 && arg.a_type != HIP_R_8F_E5M2
-           && arg.a_type != HIP_R_4F_E2M1_EXT && arg.a_type != HIP_R_6F_E2M3_EXT
+        if(arg.a_type != HIP_R_4F_E2M1_EXT && arg.a_type != HIP_R_6F_E2M3_EXT
+#ifdef ROCM_USE_FLOAT8
+           && arg.a_type != HIP_R_8F_E4M3 && arg.a_type != HIP_R_8F_E5M2
+#endif
            && arg.a_type != HIP_R_6F_E3M2_EXT)
             throw std::invalid_argument("Invalid a_type for block scaling format: "s
                                         + hip_datatype_to_string(arg.a_type));
     }
     if(arg.scaleB == hipblaslt_scaling_format::Block)
     {
-        if(arg.b_type != HIP_R_8F_E4M3 && arg.b_type != HIP_R_8F_E5M2
-           && arg.b_type != HIP_R_4F_E2M1_EXT && arg.b_type != HIP_R_6F_E2M3_EXT
+        if(arg.b_type != HIP_R_4F_E2M1_EXT && arg.b_type != HIP_R_6F_E2M3_EXT
+#ifdef ROCM_USE_FLOAT8
+           && arg.b_type != HIP_R_8F_E4M3 && arg.b_type != HIP_R_8F_E5M2
+#endif
            && arg.b_type != HIP_R_6F_E3M2_EXT)
             throw std::invalid_argument("Invalid b_type for block scaling format: "s
                                         + hip_datatype_to_string(arg.b_type));

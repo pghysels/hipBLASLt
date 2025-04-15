@@ -113,13 +113,13 @@ namespace rocisa
         case rocisa::DataType::BFloat8_fnuz:
             return TensileLite::TypeInfo<TensileLite::BFloat8_fnuz>::ElementSize;
         case rocisa::DataType::Float8BFloat8:
-            return TensileLite::TypeInfo<Float8BFloat8>::ElementSize;
+            return TensileLite::TypeInfo<TensileLite::Float8BFloat8>::ElementSize;
         case rocisa::DataType::BFloat8Float8:
-            return TensileLite::TypeInfo<BFloat8Float8>::ElementSize;
+            return TensileLite::TypeInfo<TensileLite::BFloat8Float8>::ElementSize;
         case rocisa::DataType::Float8BFloat8_fnuz:
-            return TensileLite::TypeInfo<Float8BFloat8_fnuz>::ElementSize;
+            return TensileLite::TypeInfo<TensileLite::Float8BFloat8_fnuz>::ElementSize;
         case rocisa::DataType::BFloat8Float8_fnuz:
-            return TensileLite::TypeInfo<BFloat8Float8_fnuz>::ElementSize;
+            return TensileLite::TypeInfo<TensileLite::BFloat8Float8_fnuz>::ElementSize;
         case rocisa::DataType::Count:;
         }
         return 1;
