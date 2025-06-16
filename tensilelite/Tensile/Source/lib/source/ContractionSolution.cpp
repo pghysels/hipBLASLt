@@ -43,7 +43,7 @@
 #include <cstdlib>
 #include <random>
 
-#include <stdio.h>
+// #include <stdio.h>
 
 #ifdef ENABLE_ROCTX
 #include <roctracer/roctx.h>

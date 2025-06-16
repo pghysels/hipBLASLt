@@ -36,6 +36,8 @@
 #include <Tensile/ProblemKey.hpp>
 #include <Tensile/SolutionLibrary.hpp>
 #include <Tensile/Utils.hpp>
+#include <Tensile/analytical/Utils.hpp>
+
 
 namespace TensileLite
 {
@@ -52,10 +54,11 @@ namespace TensileLite
         using SolutionFeatures = std::vector<std::shared_ptr<MLFeatures::MLFeature<MySolution>>>;
         using ProblemFeatures  = std::vector<std::shared_ptr<MLFeatures::MLFeature<MyProblem>>>;
 
-        std::map<int, std::shared_ptr<MySolution>> solutionmap;
-        std::shared_ptr<MLPNet>                   model;
-        SolutionFeatures                           solFeatures;
-        ProblemFeatures                            probFeatures;
+        std::map<int, std::shared_ptr<MySolution>>      solutionmap;
+        std::shared_ptr<MLPNet>                         model;
+        SolutionFeatures                                solFeatures;
+        ProblemFeatures                                 probFeatures;
+        std::vector<TensileLite::analytical::TileTuple> tile_list;
 
         static std::string Type()
         {
@@ -127,6 +130,77 @@ namespace TensileLite
                                                             Hardware const&  hardware,
                                                             int numSolutions) const override
         {
+            size_t                     m     = 1;
+            size_t                     n     = 1;
+            size_t                     k     = 1;
+            size_t                     batch = 1;
+            for(size_t i = 0; i < problem.freeIndicesA().size(); i++)
+            {
+                m *= problem.freeSizeA(i);
+            }
+            for(size_t i = 0; i < problem.freeIndicesB().size(); i++)
+            {
+                n *= problem.freeSizeB(i);
+            }
+            for(size_t i = 0; i < problem.boundIndices().size(); ++i)
+            {
+                k *= problem.boundSize(i);
+            }
+            for(size_t i = 0; i < problem.batchIndices().size(); ++i)
+            {
+                batch *= problem.batchSize(i);
+            }
+
+            bool                  debug   = Debug::Instance().printPropertyEvaluation();
+            hip::HipAMDGPU const* pAMDGPU = dynamic_cast<hip::HipAMDGPU const*>(&hardware);
+            size_t                elementSizeA_bits
+                = problem.a().elementBytes() * 8; // TODO update for A/B different types
+            size_t elementSizeB_bits
+                = problem.b().elementBytes() * 8; // TODO update for A/B different types
+            size_t elementSizeC_bits
+                = problem.c().elementBytes() * 8; // TODO update for A/B different types
+            const analytical::Hardware& analaytical_hardware = *(pAMDGPU->analyticalHardware);
+            int                         WGM
+                = std::sqrt(std::floor(analaytical_hardware.N_CU / analaytical_hardware.NUM_XCD));
+            auto selected_tiles = analytical::select_best_macro_tile_size(
+                m,
+                n,
+                k,
+                batch,
+                problem.transA(),
+                problem.transB(),
+                *(pAMDGPU->analyticalHardware),
+                tile_list,
+                elementSizeA_bits,
+                elementSizeA_bits,
+                elementSizeC_bits,
+                0, //mx_block_size -> MX Data types come from rocroller.
+                0.8,
+                debug,
+                false,
+                WGM);
+
+            std::unordered_map<TensileLite::analytical::TileTuple, double> tile_latencies;
+            tile_latencies.reserve(selected_tiles.size());
+            for (const auto& tile : selected_tiles)
+            {
+                // std::cout << "tile latency: " << std::get<0>(tile)
+                //           << " MT=" << std::get<1>(tile) << ", "
+                //           << std::get<2>(tile) << ", "
+                //           << std::get<3>(tile) << ", "
+                //           << std::get<4>(tile) << ", "
+                //           << std::get<5>(tile) << ", "
+                //           << std::get<6>(tile) << std::endl;
+                tile_latencies.insert({std::make_tuple(std::get<1>(tile),
+                                                     std::get<2>(tile),
+                                                     std::get<3>(tile),
+                                                     std::get<4>(tile),
+                                                     std::get<5>(tile),
+                                                     std::get<6>(tile),
+                                                     std::get<7>(tile)),
+                                       std::get<0>(tile)});
+            }
+
             std::vector<float> problemkey
                 = ProblemKey::keyForProblem<std::vector<float>, MyProblem, float>(
                     problem, this->probFeatures);
@@ -134,12 +208,33 @@ namespace TensileLite
             auto logits = model->predict(problemkey);
             assert(logits.size() == solutionmap.size());
 
-            std::vector<std::pair<decltype(logits)::value_type,
-                                  std::shared_ptr<MySolution>*>> solution_ranking;
+            // used to sort solutions, first on Origami latency, then on logits
+            std::vector<std::tuple<double,
+                                   decltype(logits)::value_type,
+                                   std::shared_ptr<MySolution>*>> solution_ranking;
             solution_ranking.reserve(solutionmap.size());
             for(auto& s : solutionmap)
-                solution_ranking.emplace_back(logits[s.second->libraryLogicIndex],
+            {
+                // std::cout << "latency, logits: " << tile_latencies[std::make_tuple(
+                //             s.second->sizeMapping.macroTile.x, // MT_M
+                //             s.second->sizeMapping.macroTile.y, // MT_N
+                //             s.second->sizeMapping.depthU, // MT_K
+                //             s.second->sizeMapping.matrixInstruction[0], // MI_M
+                //             s.second->sizeMapping.matrixInstruction[1], // MI_N
+                //             s.second->sizeMapping.matrixInstruction[2])] << "  "
+                //         << logits[s.second->libraryLogicIndex] << std::endl;
+                solution_ranking.emplace_back(
+                    tile_latencies[std::make_tuple(
+                            s.second->sizeMapping.macroTile.x, // MT_M
+                            s.second->sizeMapping.macroTile.y, // MT_N
+                            s.second->sizeMapping.depthU, // MT_K
+                            s.second->sizeMapping.matrixInstruction[0], // MI_M
+                            s.second->sizeMapping.matrixInstruction[1], // MI_N
+                            s.second->sizeMapping.matrixInstruction[2],
+                            s.second->sizeMapping.CUOccupancy)],
+                    -logits[s.second->libraryLogicIndex],
                     (std::shared_ptr<MySolution>*)(&s.second));
+            }
 
             SolutionVector<MySolution> rv;
             int numToSort = std::min(numSolutions, int(solution_ranking.size()));
@@ -147,13 +242,18 @@ namespace TensileLite
             auto it = solution_ranking.begin(), it_end = solution_ranking.end();
             while(it != it_end && numToSort)
             {
-                std::partial_sort(it, it + numToSort, it_end, std::greater{});
+                std::partial_sort(it, it + numToSort, it_end);
                 for(; it != it + numToSort; it++)
-                    if((*((*it->second)->problemPredicate))(problem))
+                {
+                    auto& solution = *std::get<2>(*it);
+                    if((*solution->hardwarePredicate)(hardware) &&
+                       (*solution->problemPredicate)(problem))
                     {
-                        rv.emplace_back(*it->second);
+                        // std::cout << "SORTED: " << std::get<0>(*it) << " " << -std::get<1>(*it) << std::endl;
+                        rv.emplace_back(solution);
                         numToSort--;
                     }
+                }
             }
             return rv;
         }
